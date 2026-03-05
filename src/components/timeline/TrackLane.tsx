@@ -11,11 +11,13 @@ interface TrackLaneProps {
 
 export function TrackLane({ track }: TrackLaneProps) {
   const pixelsPerSecond = useUIStore((s) => s.pixelsPerSecond);
+  const clipDragPreview = useUIStore((s) => s.clipDragPreview);
   const project = useProjectStore((s) => s.project);
   const { handleLaneClick, handleLaneDragSelection } = useTimelineInteraction();
   const [dragRange, setDragRange] = useState<{ startX: number; endX: number } | null>(null);
   const dragMovedRef = useRef(false);
   const totalWidth = project ? project.totalDuration * pixelsPerSecond : 0;
+  const isDropTarget = clipDragPreview?.hoverTrackId === track.id;
 
   const onMouseDown = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     if (e.button !== 0 || e.target !== e.currentTarget) return;
@@ -56,10 +58,22 @@ export function TrackLane({ track }: TrackLaneProps) {
 
   return (
     <div
-      className="relative h-24 border-b border-daw-border bg-daw-surface/40 hover:bg-daw-surface/60 transition-colors"
+      className={`relative h-24 border-b border-daw-border transition-colors ${
+        isDropTarget ? 'bg-daw-accent/15' : 'bg-daw-surface/40 hover:bg-daw-surface/60'
+      }`}
+      data-track-id={track.id}
       style={{ width: totalWidth }}
       onMouseDown={onMouseDown}
     >
+      {clipDragPreview && isDropTarget && (
+        <div
+          className="absolute top-1 bottom-1 rounded border-2 border-daw-accent/80 bg-daw-accent/25 pointer-events-none z-30"
+          style={{
+            left: clipDragPreview.startTime * pixelsPerSecond,
+            width: Math.max(6, clipDragPreview.duration * pixelsPerSecond),
+          }}
+        />
+      )}
       {dragRange && (
         <div
           className="absolute top-0 bottom-0 pointer-events-none bg-daw-accent/20 border border-daw-accent/70 z-20"

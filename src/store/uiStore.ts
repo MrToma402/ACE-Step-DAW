@@ -7,6 +7,15 @@ export interface ShortcutBindings {
   deleteSelected: string;
 }
 
+export interface ClipDragPreview {
+  clipId: string;
+  sourceTrackId: string;
+  hoverTrackId: string;
+  startTime: number;
+  duration: number;
+  color: string;
+}
+
 interface UIState {
   activeTab: ActiveTab;
   pixelsPerSecond: number;
@@ -22,6 +31,7 @@ interface UIState {
   showKeyboardShortcutsDialog: boolean;
   showMixer: boolean;
   shortcutBindings: ShortcutBindings;
+  clipDragPreview: ClipDragPreview | null;
 
   setActiveTab: (tab: ActiveTab) => void;
   setPixelsPerSecond: (pps: number) => void;
@@ -40,6 +50,7 @@ interface UIState {
   setShowKeyboardShortcutsDialog: (v: boolean) => void;
   setShortcutBinding: (action: keyof ShortcutBindings, keyCode: string) => void;
   resetShortcutBindings: () => void;
+  setClipDragPreview: (preview: ClipDragPreview | null) => void;
   toggleMixer: () => void;
 }
 
@@ -64,6 +75,7 @@ export const useUIStore = create<UIState>((set) => ({
   showKeyboardShortcutsDialog: false,
   showMixer: true,
   shortcutBindings: DEFAULT_SHORTCUT_BINDINGS,
+  clipDragPreview: null,
 
   setActiveTab: (tab) => set({ activeTab: tab }),
   setPixelsPerSecond: (pps) => set({ pixelsPerSecond: pps }),
@@ -113,5 +125,6 @@ export const useUIStore = create<UIState>((set) => ({
       },
     })),
   resetShortcutBindings: () => set({ shortcutBindings: DEFAULT_SHORTCUT_BINDINGS }),
+  setClipDragPreview: (preview) => set({ clipDragPreview: preview }),
   toggleMixer: () => set((s) => ({ showMixer: !s.showMixer })),
 }));

@@ -32,6 +32,7 @@ interface ProjectState {
 
   addClip: (trackId: string, clip: Omit<Clip, 'id' | 'trackId' | 'generationStatus' | 'generationJobId' | 'cumulativeMixKey' | 'isolatedAudioKey' | 'waveformPeaks'>) => Clip;
   updateClip: (clipId: string, updates: Partial<Clip>) => void;
+  moveClipToTrack: (clipId: string, targetTrackId: string, updates?: Partial<Clip>) => void;
   removeClip: (clipId: string) => void;
   duplicateClip: (clipId: string) => Clip | undefined;
   updateClipStatus: (clipId: string, status: ClipGenerationStatus, extra?: Partial<Clip>) => void;
@@ -208,6 +209,60 @@ export const useProjectStore = create<ProjectState>()(
             c.id === clipId ? { ...c, ...updates } : c,
           ),
         }));
+        set({
+          project: {
+            ...state.project,
+            updatedAt: Date.now(),
+            totalDuration: computeTotalDuration(newTracks),
+            tracks: newTracks,
+          },
+        });
+      },
+
+      moveClipToTrack: (clipId, targetTrackId, updates) => {
+        const state = get();
+        if (!state.project) return;
+
+        let sourceTrackId: string | null = null;
+        let sourceClip: Clip | null = null;
+        for (const track of state.project.tracks) {
+          const candidate = track.clips.find((c) => c.id === clipId);
+          if (candidate) {
+            sourceTrackId = track.id;
+            sourceClip = candidate;
+            break;
+          }
+        }
+        if (!sourceTrackId || !sourceClip) return;
+
+        const movedClip: Clip = {
+          ...sourceClip,
+          ...updates,
+          trackId: targetTrackId,
+        };
+
+        const newTracks = state.project.tracks.map((track) => {
+          if (track.id === sourceTrackId && track.id === targetTrackId) {
+            return {
+              ...track,
+              clips: track.clips.map((c) => (c.id === clipId ? movedClip : c)),
+            };
+          }
+          if (track.id === sourceTrackId) {
+            return {
+              ...track,
+              clips: track.clips.filter((c) => c.id !== clipId),
+            };
+          }
+          if (track.id === targetTrackId) {
+            return {
+              ...track,
+              clips: [...track.clips, movedClip],
+            };
+          }
+          return track;
+        });
+
         set({
           project: {
             ...state.project,

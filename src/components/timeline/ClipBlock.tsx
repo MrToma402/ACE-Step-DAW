@@ -21,7 +21,10 @@ export function ClipBlock({ clip, track }: ClipBlockProps) {
   const selectedClipIds = useUIStore((s) => s.selectedClipIds);
   const selectClip = useUIStore((s) => s.selectClip);
   const setEditingClip = useUIStore((s) => s.setEditingClip);
+  const clipDragPreview = useUIStore((s) => s.clipDragPreview);
+  const setClipDragPreview = useUIStore((s) => s.setClipDragPreview);
   const updateClip = useProjectStore((s) => s.updateClip);
+  const moveClipToTrack = useProjectStore((s) => s.moveClipToTrack);
   const removeClip = useProjectStore((s) => s.removeClip);
   const duplicateClip = useProjectStore((s) => s.duplicateClip);
   const project = useProjectStore((s) => s.project);
@@ -32,6 +35,7 @@ export function ClipBlock({ clip, track }: ClipBlockProps) {
   const left = clip.startTime * pixelsPerSecond;
   const width = clip.duration * pixelsPerSecond;
   const isSelected = selectedClipIds.has(clip.id);
+  const isDraggingThisClip = clipDragPreview?.clipId === clip.id;
 
   const dragRef = useRef(false);
 
@@ -52,17 +56,31 @@ export function ClipBlock({ clip, track }: ClipBlockProps) {
 
     const mode = getDragMode(e);
     const startX = e.clientX;
+    const startY = e.clientY;
     const origStart = clip.startTime;
     const origDuration = clip.duration;
     const origAudioOffset = clip.audioOffset ?? 0;
     const origAudioDuration = clip.audioDuration ?? clip.duration;
+    let latestStart = origStart;
+    let latestHoverTrackId = track.id;
+    let lastPreviewStart = Number.NaN;
+    let lastPreviewTrack = '';
     const bpm = project?.bpm ?? 120;
     const totalDuration = project?.totalDuration ?? 600;
     dragRef.current = false;
 
+    const findDropTargetTrackId = (clientX: number, clientY: number): string | null => {
+      const el = document.elementFromPoint(clientX, clientY);
+      if (!(el instanceof HTMLElement)) return null;
+      const lane = el.closest('[data-track-id]');
+      if (!(lane instanceof HTMLElement)) return null;
+      return lane.dataset.trackId ?? null;
+    };
+
     const onMouseMove = (ev: MouseEvent) => {
       const dx = ev.clientX - startX;
-      if (Math.abs(dx) < 3 && !dragRef.current) return;
+      const dy = ev.clientY - startY;
+      if (Math.abs(dx) < 3 && Math.abs(dy) < 3 && !dragRef.current) return;
       dragRef.current = true;
 
       const deltaSec = dx / pixelsPerSecond;
@@ -70,6 +88,21 @@ export function ClipBlock({ clip, track }: ClipBlockProps) {
       if (mode === 'move') {
         let newStart = snapToGrid(origStart + deltaSec, bpm, 1);
         newStart = Math.max(0, Math.min(newStart, totalDuration - origDuration));
+        latestStart = newStart;
+        const hoverTrackId = findDropTargetTrackId(ev.clientX, ev.clientY) ?? track.id;
+        latestHoverTrackId = hoverTrackId;
+        if (hoverTrackId !== lastPreviewTrack || Math.abs(newStart - lastPreviewStart) > 0.001) {
+          setClipDragPreview({
+            clipId: clip.id,
+            sourceTrackId: track.id,
+            hoverTrackId,
+            startTime: newStart,
+            duration: clip.duration,
+            color: track.color,
+          });
+          lastPreviewTrack = hoverTrackId;
+          lastPreviewStart = newStart;
+        }
         updateClip(clip.id, { startTime: newStart });
       } else if (mode === 'resize-left') {
         let newStart = snapToGrid(origStart + deltaSec, bpm, 1);
@@ -99,14 +132,20 @@ export function ClipBlock({ clip, track }: ClipBlockProps) {
       }
     };
 
-    const onMouseUp = () => {
+    const onMouseUp = (ev: MouseEvent) => {
       window.removeEventListener('mousemove', onMouseMove);
       window.removeEventListener('mouseup', onMouseUp);
+      if (mode === 'move' && dragRef.current) {
+        if (latestHoverTrackId !== track.id) {
+          moveClipToTrack(clip.id, latestHoverTrackId, { startTime: latestStart });
+        }
+      }
+      setClipDragPreview(null);
     };
 
     window.addEventListener('mousemove', onMouseMove);
     window.addEventListener('mouseup', onMouseUp);
-  }, [clip.id, clip.startTime, clip.duration, clip.audioOffset, clip.audioDuration, pixelsPerSecond, project, updateClip, getDragMode]);
+  }, [clip.id, clip.startTime, clip.duration, clip.audioOffset, clip.audioDuration, pixelsPerSecond, project, updateClip, moveClipToTrack, setClipDragPreview, track.id, track.color, getDragMode]);
 
   const handleClick = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
@@ -168,6 +207,7 @@ export function ClipBlock({ clip, track }: ClipBlockProps) {
         className={`absolute top-1 bottom-1 rounded select-none overflow-hidden border border-white/10
           ${statusStyles[clip.generationStatus] ?? ''}
           ${isSelected ? 'ring-1 ring-daw-accent ring-offset-1 ring-offset-transparent' : ''}
+          ${isDraggingThisClip ? 'opacity-50' : ''}
         `}
         style={{
           left,
