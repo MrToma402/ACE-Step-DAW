@@ -15,7 +15,7 @@ const aceStepApiTarget =
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   server: {
-    port: 5174,
+    port: 5176,
     proxy: {
       '/api/modal/loras': {
         target: modalLorasTarget,

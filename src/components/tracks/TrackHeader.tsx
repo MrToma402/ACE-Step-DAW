@@ -1,3 +1,4 @@
+import { useRef, type ChangeEvent } from 'react';
 import type { Track } from '../../types/project';
 import { useProjectStore } from '../../store/projectStore';
 import { TRACK_CATALOG } from '../../constants/tracks';
@@ -10,13 +11,40 @@ interface TrackHeaderProps {
 export function TrackHeader({ track }: TrackHeaderProps) {
   const updateTrack = useProjectStore((s) => s.updateTrack);
   const removeTrack = useProjectStore((s) => s.removeTrack);
-  const { openFilePickerForTrack } = useAudioImport();
+  const { importAudioToTrack } = useAudioImport();
   const info = TRACK_CATALOG[track.trackName];
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const volumePct = Math.round(track.volume * 100);
 
+  const handleImportClick = () => {
+    const input = fileInputRef.current;
+    if (!input) return;
+    input.value = '';
+    input.click();
+  };
+
+  const handleFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    try {
+      await importAudioToTrack(file, track.id);
+    } catch (error) {
+      console.error('Track audio import failed:', error);
+    } finally {
+      event.target.value = '';
+    }
+  };
+
   return (
     <div className="flex flex-col justify-between h-24 border-b border-daw-border bg-daw-panel group hover:bg-daw-panel-light transition-colors">
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="audio/*"
+        className="hidden"
+        onChange={handleFileChange}
+      />
       {/* Top: Name + Track number */}
       <div className="px-2.5 pt-2">
         <div className="flex items-center justify-between mb-1.5">
@@ -52,7 +80,7 @@ export function TrackHeader({ track }: TrackHeaderProps) {
             S
           </button>
           <button
-            onClick={() => openFilePickerForTrack(track.id)}
+            onClick={handleImportClick}
             className="w-5 h-4 text-[8px] font-bold flex items-center justify-center rounded bg-black/40 text-slate-600 hover:text-blue-400 hover:bg-blue-900/30 transition-all"
             title="Import audio to this track"
           >

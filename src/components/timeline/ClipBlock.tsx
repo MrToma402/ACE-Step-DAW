@@ -214,6 +214,7 @@ export function ClipBlock({ clip, track }: ClipBlockProps) {
   return (
     <>
       <div
+        data-clip-id={clip.id}
         className={`absolute top-1 bottom-1 rounded select-none overflow-hidden border border-white/10
           ${statusStyles[clip.generationStatus] ?? ''}
           ${arrangementSelected || hideInactiveTakes ? '' : 'opacity-40'}

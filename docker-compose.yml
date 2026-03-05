@@ -5,7 +5,7 @@ services:
       dockerfile: Dockerfile
     container_name: ace-step-new
     ports:
-      - "5175:5174"
+      - "5176:5176"
     environment:
       VITE_ACESTEP_API_TARGET: "http://host.docker.internal:3000/api/acestep"
       VITE_MODAL_LORAS_TARGET: "https://marcf--acestep-acestepinference-api-list-loras.modal.run"

@@ -44,28 +44,31 @@ export function Timeline() {
   }
 
   return (
-    <div
-      ref={scrollRef}
-      className="flex-1 overflow-auto bg-daw-bg"
-      onWheel={handleWheel}
-    >
-      <div className="relative" style={{ width: totalWidth, minWidth: '100%' }}>
-        <TimeRuler />
-        <SectionTimelineStrip />
+    <div className="flex-1 min-h-0 min-w-0 flex flex-col bg-daw-bg">
+      <div
+        ref={scrollRef}
+        data-timeline-scroll-container="true"
+        className="timeline-scroll flex-1 min-h-0 min-w-0 overflow-x-auto overflow-y-auto"
+        onWheel={handleWheel}
+      >
+        <div className="relative" style={{ width: totalWidth, minWidth: '100%' }}>
+          <TimeRuler />
+          <SectionTimelineStrip />
 
-        <div className="relative">
-          <GridOverlay />
-          <Playhead />
+          <div className="relative">
+            <GridOverlay />
+            <Playhead />
 
-          {sortedTracks.map((track) => (
-            <TrackLane key={track.id} track={track} />
-          ))}
+            {sortedTracks.map((track) => (
+              <TrackLane key={track.id} track={track} />
+            ))}
 
-          {sortedTracks.length === 0 && (
-            <div className="flex items-center justify-center h-32 text-zinc-600 text-xs">
-              Add a track to begin
-            </div>
-          )}
+            {sortedTracks.length === 0 && (
+              <div className="flex items-center justify-center h-32 text-zinc-600 text-xs">
+                Add a track to begin
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>

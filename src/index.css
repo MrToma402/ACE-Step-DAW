@@ -83,6 +83,32 @@
   scrollbar-color: #333 transparent;
 }
 
+/* Timeline scrollbars should remain obvious for long projects */
+.timeline-scroll {
+  scrollbar-width: auto;
+  scrollbar-color: rgba(59, 130, 246, 0.8) rgba(255, 255, 255, 0.08);
+}
+
+.timeline-scroll::-webkit-scrollbar {
+  height: 10px;
+  width: 10px;
+}
+
+.timeline-scroll::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.08);
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.timeline-scroll::-webkit-scrollbar-thumb {
+  background: rgba(59, 130, 246, 0.75);
+  border-radius: 999px;
+  border: 2px solid #0f1113;
+}
+
+.timeline-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(96, 165, 250, 0.95);
+}
+
 body {
   margin: 0;
   overflow: hidden;

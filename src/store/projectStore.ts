@@ -11,6 +11,7 @@ import {
   DEFAULT_GENERATION,
 } from '../constants/defaults';
 import { saveProject as saveProjectToIDB } from '../services/projectStorage';
+import { deleteAudioBlob } from '../services/audioFileManager';
 
 const MIN_TIMELINE_DURATION = 30; // seconds
 const TIMELINE_PADDING = 10;      // seconds beyond last clip
@@ -138,6 +139,13 @@ export const useProjectStore = create<ProjectState>()(
       removeTrack: (trackId) => {
         const state = get();
         if (!state.project) return;
+        const removedTrack = state.project.tracks.find((t) => t.id === trackId) ?? null;
+        if (removedTrack) {
+          for (const clip of removedTrack.clips) {
+            void deleteAudioBlob(state.project.id, clip.id, 'cumulative');
+            void deleteAudioBlob(state.project.id, clip.id, 'isolated');
+          }
+        }
         const newTracks = state.project.tracks.filter((t) => t.id !== trackId);
         set({
           project: {
@@ -278,6 +286,11 @@ export const useProjectStore = create<ProjectState>()(
       removeClip: (clipId) => {
         const state = get();
         if (!state.project) return;
+        const clipExists = state.project.tracks.some((t) => t.clips.some((c) => c.id === clipId));
+        if (clipExists) {
+          void deleteAudioBlob(state.project.id, clipId, 'cumulative');
+          void deleteAudioBlob(state.project.id, clipId, 'isolated');
+        }
         const newTracks = state.project.tracks.map((t) => ({
           ...t,
           clips: t.clips.filter((c) => c.id !== clipId),

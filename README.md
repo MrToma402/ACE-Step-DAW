@@ -14,7 +14,7 @@ npm install
 npm run dev
 ```
 
-Opens at [http://localhost:5174](http://localhost:5174). The dev server proxies `/api` requests to the ACE-Step 1.5 backend at `localhost:8001`.
+Opens at [http://localhost:5176](http://localhost:5176). The dev server proxies `/api` requests to the ACE-Step 1.5 backend at `localhost:8001`.
 
 ### Production Build
 

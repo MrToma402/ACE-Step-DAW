@@ -97,7 +97,7 @@ export function AppShell() {
 
       {activeTab === 'daw' ? (
         <>
-          <div className="flex flex-1 min-h-0">
+          <div className="flex flex-1 min-h-0 min-w-0">
             {project && (
               <>
                 <div
@@ -106,14 +106,16 @@ export function AppShell() {
                 >
                   <TrackList />
                 </div>
-                <div
-                  onMouseDown={startSidebarResize}
-                  className="w-1 shrink-0 cursor-col-resize bg-transparent hover:bg-daw-accent/30 transition-colors"
-                  title="Drag to resize track panel"
-                />
+                <div className="w-0 shrink-0 relative">
+                  <div
+                    onMouseDown={startSidebarResize}
+                    className="absolute inset-y-0 -left-0.5 w-1 cursor-col-resize bg-transparent hover:bg-daw-accent/30 transition-colors"
+                    title="Drag to resize track panel"
+                  />
+                </div>
               </>
             )}
-            <div className="flex-1 min-h-0 flex flex-col">
+            <div className="flex-1 min-h-0 min-w-0 flex flex-col">
               <Timeline />
               {project && <ArrangementPanel />}
             </div>

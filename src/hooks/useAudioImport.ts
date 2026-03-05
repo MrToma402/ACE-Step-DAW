@@ -1,10 +1,30 @@
 import { useCallback } from 'react';
-import { v4 as uuidv4 } from 'uuid';
 import { useProjectStore } from '../store/projectStore';
+import { useUIStore } from '../store/uiStore';
 import { getAudioEngine } from './useAudioEngine';
 import { saveAudioBlob } from '../services/audioFileManager';
 import { computeWaveformPeaks } from '../utils/waveformPeaks';
 import { audioBufferToWavBlob } from '../utils/wav';
+
+function revealImportedClip(clipId: string): void {
+  useUIStore.getState().setActiveTab('daw');
+  useUIStore.getState().selectClip(clipId, false);
+  window.requestAnimationFrame(() => {
+    const clipElement = document.querySelector<HTMLElement>(`[data-clip-id="${clipId}"]`);
+    const scrollContainer = document.querySelector<HTMLElement>('[data-timeline-scroll-container="true"]');
+    if (!clipElement || !scrollContainer) return;
+
+    const clipLeft = clipElement.offsetLeft;
+    const clipRight = clipLeft + clipElement.offsetWidth;
+    const viewLeft = scrollContainer.scrollLeft;
+    const viewRight = viewLeft + scrollContainer.clientWidth;
+
+    if (clipLeft < viewLeft || clipRight > viewRight) {
+      const targetLeft = Math.max(0, clipLeft - 48);
+      scrollContainer.scrollTo({ left: targetLeft, behavior: 'smooth' });
+    }
+  });
+}
 
 export function useAudioImport() {
   const addTrack = useProjectStore((s) => s.addTrack);
@@ -35,7 +55,8 @@ export function useAudioImport() {
       }
     }
 
-    const clipDuration = Math.min(duration, project.totalDuration - startTime);
+    // Do not clip to current timeline length; project duration will expand after addClip.
+    const clipDuration = duration;
     if (clipDuration <= 0) return;
 
     const clip = addClip(trackId, {
@@ -74,6 +95,7 @@ export function useAudioImport() {
       audioDuration: clipDuration,
       audioOffset: 0,
     });
+    revealImportedClip(clip.id);
   }, [addClip, updateClipStatus]);
 
   const importAudioFile = useCallback(async (file: File) => {
@@ -95,8 +117,8 @@ export function useAudioImport() {
       displayName: file.name.replace(/\.[^.]+$/, ''),
     });
 
-    // Create a clip spanning the audio
-    const clipDuration = Math.min(duration, project.totalDuration);
+    // Keep full imported duration and let timeline auto-expand.
+    const clipDuration = duration;
     const clip = addClip(track.id, {
       startTime: 0,
       duration: clipDuration,
@@ -137,33 +159,46 @@ export function useAudioImport() {
       audioDuration: clipDuration,
       audioOffset: 0,
     });
+    revealImportedClip(clip.id);
   }, [addTrack, addClip, updateClipStatus]);
 
-  const openFilePicker = useCallback(() => {
+  const openAudioPicker = useCallback((onFile: (file: File) => Promise<void>) => {
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = 'audio/*';
+    input.style.position = 'fixed';
+    input.style.left = '-9999px';
+    input.style.top = '0';
+    input.style.width = '1px';
+    input.style.height = '1px';
+    input.style.opacity = '0';
+    document.body.appendChild(input);
+
     input.onchange = async () => {
-      const file = input.files?.[0];
-      if (file) {
-        await importAudioFile(file);
+      try {
+        const file = input.files?.[0];
+        if (file) {
+          await onFile(file);
+        }
+      } catch (error) {
+        console.error('Audio import failed:', error);
+      } finally {
+        input.value = '';
+        input.remove();
       }
     };
+
+    input.value = '';
     input.click();
-  }, [importAudioFile]);
+  }, []);
+
+  const openFilePicker = useCallback(() => {
+    openAudioPicker(importAudioFile);
+  }, [importAudioFile, openAudioPicker]);
 
   const openFilePickerForTrack = useCallback((trackId: string) => {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = 'audio/*';
-    input.onchange = async () => {
-      const file = input.files?.[0];
-      if (file) {
-        await importAudioToTrack(file, trackId);
-      }
-    };
-    input.click();
-  }, [importAudioToTrack]);
+    openAudioPicker((file) => importAudioToTrack(file, trackId));
+  }, [importAudioToTrack, openAudioPicker]);
 
   return { importAudioFile, importAudioToTrack, openFilePicker, openFilePickerForTrack };
 }
