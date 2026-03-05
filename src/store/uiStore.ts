@@ -2,6 +2,11 @@ import { create } from 'zustand';
 
 export type ActiveTab = 'daw' | 'composer';
 
+export interface ShortcutBindings {
+  playPause: string;
+  deleteSelected: string;
+}
+
 interface UIState {
   activeTab: ActiveTab;
   pixelsPerSecond: number;
@@ -14,7 +19,9 @@ interface UIState {
   showExportDialog: boolean;
   showSettingsDialog: boolean;
   showProjectListDialog: boolean;
+  showKeyboardShortcutsDialog: boolean;
   showMixer: boolean;
+  shortcutBindings: ShortcutBindings;
 
   setActiveTab: (tab: ActiveTab) => void;
   setPixelsPerSecond: (pps: number) => void;
@@ -30,10 +37,17 @@ interface UIState {
   setShowExportDialog: (v: boolean) => void;
   setShowSettingsDialog: (v: boolean) => void;
   setShowProjectListDialog: (v: boolean) => void;
+  setShowKeyboardShortcutsDialog: (v: boolean) => void;
+  setShortcutBinding: (action: keyof ShortcutBindings, keyCode: string) => void;
+  resetShortcutBindings: () => void;
   toggleMixer: () => void;
 }
 
 const ZOOM_LEVELS = [10, 25, 50, 100, 200, 500];
+const DEFAULT_SHORTCUT_BINDINGS: ShortcutBindings = {
+  playPause: 'Space',
+  deleteSelected: 'Backspace',
+};
 
 export const useUIStore = create<UIState>((set) => ({
   activeTab: 'composer',
@@ -47,7 +61,9 @@ export const useUIStore = create<UIState>((set) => ({
   showExportDialog: false,
   showSettingsDialog: false,
   showProjectListDialog: false,
+  showKeyboardShortcutsDialog: false,
   showMixer: true,
+  shortcutBindings: DEFAULT_SHORTCUT_BINDINGS,
 
   setActiveTab: (tab) => set({ activeTab: tab }),
   setPixelsPerSecond: (pps) => set({ pixelsPerSecond: pps }),
@@ -88,5 +104,14 @@ export const useUIStore = create<UIState>((set) => ({
   setShowExportDialog: (v) => set({ showExportDialog: v }),
   setShowSettingsDialog: (v) => set({ showSettingsDialog: v }),
   setShowProjectListDialog: (v) => set({ showProjectListDialog: v }),
+  setShowKeyboardShortcutsDialog: (v) => set({ showKeyboardShortcutsDialog: v }),
+  setShortcutBinding: (action, keyCode) =>
+    set((s) => ({
+      shortcutBindings: {
+        ...s.shortcutBindings,
+        [action]: keyCode,
+      },
+    })),
+  resetShortcutBindings: () => set({ shortcutBindings: DEFAULT_SHORTCUT_BINDINGS }),
   toggleMixer: () => set((s) => ({ showMixer: !s.showMixer })),
 }));

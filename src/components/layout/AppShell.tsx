@@ -12,6 +12,7 @@ import { InstrumentPicker } from '../dialogs/InstrumentPicker';
 import { ExportDialog } from '../dialogs/ExportDialog';
 import { SettingsDialog } from '../dialogs/SettingsDialog';
 import { ProjectListDialog } from '../dialogs/ProjectListDialog';
+import { KeyboardShortcutsDialog } from '../dialogs/KeyboardShortcutsDialog';
 import { useAudioEngine } from '../../hooks/useAudioEngine';
 import { useProjectStore } from '../../store/projectStore';
 import { useUIStore } from '../../store/uiStore';
@@ -20,10 +21,15 @@ import { useTransport } from '../../hooks/useTransport';
 export function AppShell() {
   const { resumeOnGesture } = useAudioEngine();
   const project = useProjectStore((s) => s.project);
+  const removeClip = useProjectStore((s) => s.removeClip);
   const activeTab = useUIStore((s) => s.activeTab);
   const showMixer = useUIStore((s) => s.showMixer);
+  const showKeyboardShortcutsDialog = useUIStore((s) => s.showKeyboardShortcutsDialog);
+  const selectedClipIds = useUIStore((s) => s.selectedClipIds);
+  const deselectAll = useUIStore((s) => s.deselectAll);
+  const shortcutBindings = useUIStore((s) => s.shortcutBindings);
   const setShowNewProjectDialog = useUIStore((s) => s.setShowNewProjectDialog);
-  const { isPlaying, play, pause, stop } = useTransport();
+  const { isPlaying, play, pause } = useTransport();
 
   const handleClick = useCallback(() => {
     resumeOnGesture();
@@ -38,23 +44,42 @@ export function AppShell() {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (
+        showKeyboardShortcutsDialog ||
         e.target instanceof HTMLInputElement ||
         e.target instanceof HTMLTextAreaElement ||
         e.target instanceof HTMLSelectElement
       ) {
         return;
       }
-      switch (e.code) {
-        case 'Space':
-          e.preventDefault();
-          if (isPlaying) pause();
-          else play();
-          break;
+      if (e.code === shortcutBindings.playPause) {
+        e.preventDefault();
+        if (isPlaying) pause();
+        else play();
+        return;
+      }
+
+      if (e.code === shortcutBindings.deleteSelected) {
+        if (activeTab !== 'daw' || selectedClipIds.size === 0) return;
+        e.preventDefault();
+        for (const clipId of selectedClipIds) {
+          removeClip(clipId);
+        }
+        deselectAll();
       }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [isPlaying, play, pause, stop]);
+  }, [
+    activeTab,
+    deselectAll,
+    isPlaying,
+    pause,
+    play,
+    removeClip,
+    selectedClipIds,
+    showKeyboardShortcutsDialog,
+    shortcutBindings,
+  ]);
 
   return (
     <div className="flex flex-col h-screen bg-daw-bg" onClick={handleClick}>
@@ -83,6 +108,7 @@ export function AppShell() {
       <InstrumentPicker />
       <ExportDialog />
       <SettingsDialog />
+      <KeyboardShortcutsDialog />
       <ProjectListDialog />
     </div>
   );

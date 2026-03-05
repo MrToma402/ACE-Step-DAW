@@ -7,6 +7,7 @@ import type { ModelEntry } from '../../types/api';
 export function SettingsDialog() {
   const show = useUIStore((s) => s.showSettingsDialog);
   const setShow = useUIStore((s) => s.setShowSettingsDialog);
+  const setShowKeyboardShortcutsDialog = useUIStore((s) => s.setShowKeyboardShortcutsDialog);
   const project = useProjectStore((s) => s.project);
 
   const [steps, setSteps] = useState(50);
@@ -162,6 +163,16 @@ export function SettingsDialog() {
                 </option>
               ))}
             </select>
+          </div>
+
+          <div className="pt-1">
+            <h3 className="text-xs font-medium text-zinc-300 mb-1.5">Keyboard Shortcuts</h3>
+            <button
+              onClick={() => setShowKeyboardShortcutsDialog(true)}
+              className="text-xs text-daw-accent hover:text-daw-accent-hover underline underline-offset-2"
+            >
+              Open keyboard shortcuts editor
+            </button>
           </div>
         </div>
 
