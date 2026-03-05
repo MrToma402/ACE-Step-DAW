@@ -10,7 +10,7 @@ export function TrackList() {
   const sortedTracks = [...project.tracks].sort((a, b) => a.order - b.order);
 
   return (
-    <div className="flex flex-col w-32 min-w-[128px] bg-daw-panel border-r border-daw-border z-10 shadow-sm shrink-0">
+    <div className="flex flex-col w-full h-full bg-daw-panel border-r border-daw-border z-10 shadow-sm shrink-0">
       {/* Header spacer aligned with TimeRuler */}
       <div className="h-8 border-b border-daw-border" />
 

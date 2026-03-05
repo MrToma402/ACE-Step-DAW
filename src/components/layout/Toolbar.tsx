@@ -149,6 +149,43 @@ export function Toolbar() {
             <>
               <div className="h-3 w-px bg-white/10" />
               <div className="flex items-center gap-2">
+                <div className="inline-flex rounded border border-daw-border overflow-hidden bg-black/30">
+                  <button
+                    onClick={() =>
+                      project &&
+                      setArrangementSettings(project.id, {
+                        viewMode: 'track',
+                      })
+                    }
+                    disabled={!project}
+                    title="Track view"
+                    className={`px-2 py-1 text-[10px] uppercase font-sans tracking-wider border-r border-daw-border transition-colors ${
+                      (arrangementWorkspace?.settings.viewMode ?? 'track') === 'track'
+                        ? 'bg-daw-accent/15 text-daw-accent'
+                        : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    Track
+                  </button>
+                  <button
+                    onClick={() =>
+                      project &&
+                      setArrangementSettings(project.id, {
+                        viewMode: 'arrangement',
+                      })
+                    }
+                    disabled={!project}
+                    title="Song arrangement view"
+                    className={`px-2 py-1 text-[10px] uppercase font-sans tracking-wider transition-colors ${
+                      (arrangementWorkspace?.settings.viewMode ?? 'track') === 'arrangement'
+                        ? 'bg-daw-accent/15 text-daw-accent'
+                        : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    Song
+                  </button>
+                </div>
+
                 <button
                   onClick={() =>
                     project &&

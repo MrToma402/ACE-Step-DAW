@@ -71,7 +71,7 @@ export function MixerConsole() {
     const masterDb = volumeToDb(masterLevel > 0.001 ? masterLevel : 0);
 
     return (
-        <div className="h-64 bg-daw-panel border-t border-daw-border flex flex-col shrink-0">
+        <div className="h-full min-h-[160px] bg-daw-panel border-t border-daw-border flex flex-col shrink-0">
             {/* Header bar */}
             <div className="h-7 bg-daw-surface border-b border-daw-border flex items-center px-4">
                 <span className="text-[10px] uppercase font-bold text-slate-500 tracking-[0.2em]">Mixer Console</span>

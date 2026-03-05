@@ -19,6 +19,7 @@ import { useProjectStore } from '../../store/projectStore';
 import { useUIStore } from '../../store/uiStore';
 import { useTransport } from '../../hooks/useTransport';
 import { useArrangementStore } from '../../store/arrangementStore';
+import { useDawLayoutResize } from '../../hooks/useDawLayoutResize';
 
 export function AppShell() {
   const { resumeOnGesture } = useAudioEngine();
@@ -35,6 +36,7 @@ export function AppShell() {
   const selectSection = useArrangementStore((s) => s.selectSection);
   const arrangementWorkspaces = useArrangementStore((s) => s.workspacesByProjectId);
   const { isPlaying, play, pause } = useTransport();
+  const { sidebarWidth, mixerHeight, startSidebarResize, startMixerResize } = useDawLayoutResize();
 
   const handleClick = useCallback(() => {
     resumeOnGesture();
@@ -108,13 +110,41 @@ export function AppShell() {
       {activeTab === 'daw' ? (
         <>
           <div className="flex flex-1 min-h-0">
-            {project && <TrackList />}
+            {project && (
+              <>
+                <div
+                  className="shrink-0 h-full"
+                  style={{ width: sidebarWidth, minWidth: 120, maxWidth: 360 }}
+                >
+                  <TrackList />
+                </div>
+                <div
+                  onMouseDown={startSidebarResize}
+                  className="w-1 shrink-0 cursor-col-resize bg-transparent hover:bg-daw-accent/30 transition-colors"
+                  title="Drag to resize track panel"
+                />
+              </>
+            )}
             <div className="flex-1 min-h-0 flex flex-col">
               <Timeline />
               {project && <ArrangementPanel />}
             </div>
           </div>
-          {project && showMixer && <MixerConsole />}
+          {project && showMixer && (
+            <div
+              className="relative shrink-0"
+              style={{ height: mixerHeight, minHeight: 160, maxHeight: 520 }}
+            >
+              <div
+                onMouseDown={startMixerResize}
+                className="absolute top-0 left-0 right-0 h-2 -translate-y-1/2 cursor-row-resize z-20"
+                title="Drag to resize mixer"
+              >
+                <div className="mx-auto mt-1 h-0.5 w-16 rounded bg-white/20 hover:bg-daw-accent/50 transition-colors" />
+              </div>
+              <MixerConsole />
+            </div>
+          )}
           {project && <GenerationPanel />}
         </>
       ) : (

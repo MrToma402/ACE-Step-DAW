@@ -14,6 +14,7 @@ import {
 export function NewProjectDialog() {
   const show = useUIStore((s) => s.showNewProjectDialog);
   const setShow = useUIStore((s) => s.setShowNewProjectDialog);
+  const setActiveTab = useUIStore((s) => s.setActiveTab);
   const createProject = useProjectStore((s) => s.createProject);
 
   const [name, setName] = useState(DEFAULT_PROJECT_NAME);
@@ -42,6 +43,7 @@ export function NewProjectDialog() {
   const handleCreate = () => {
     const bpm = normalizeBpm(bpmInput);
     createProject({ name, bpm, keyScale, timeSignature });
+    setActiveTab('daw');
     setShow(false);
   };
 
