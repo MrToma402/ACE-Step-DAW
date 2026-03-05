@@ -5,7 +5,7 @@ import { getAudioEngine } from './useAudioEngine';
 import { loadAudioBlobByKey } from '../services/audioFileManager';
 
 export function useTransport() {
-  const { isPlaying, currentTime } = useTransportStore();
+  const isPlaying = useTransportStore((s) => s.isPlaying);
   const project = useProjectStore((s) => s.project);
 
   const play = useCallback(async (fromTime?: number) => {
@@ -124,5 +124,5 @@ export function useTransport() {
     engine.updateSoloState();
   }, [project, isPlaying]);
 
-  return { isPlaying, currentTime, play, pause, stop, seek };
+  return { isPlaying, play, pause, stop, seek };
 }

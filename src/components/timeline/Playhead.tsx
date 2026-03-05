@@ -10,7 +10,9 @@ export function Playhead() {
     <div
       className="absolute top-0 bottom-0 w-px bg-daw-accent z-30 pointer-events-none"
       style={{
-        left: x,
+        left: 0,
+        transform: `translate3d(${x}px, 0, 0)`,
+        willChange: 'transform',
         boxShadow: '0 0 8px rgba(59, 130, 246, 0.6)',
       }}
     >
