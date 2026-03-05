@@ -27,11 +27,7 @@ export function Playhead() {
           willChange: 'transform',
           boxShadow: '0 0 8px rgba(59, 130, 246, 0.6)',
         }}
-      >
-        <div className="absolute -top-1 -translate-x-1/2 text-daw-accent">
-          <span className="material-symbols-outlined text-base">arrow_drop_down</span>
-        </div>
-      </div>
+      />
     </>
   );
 }

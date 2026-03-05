@@ -1,6 +1,7 @@
 import { useProjectStore } from '../../store/projectStore';
 import { useUIStore } from '../../store/uiStore';
 import { useArrangementStore } from '../../store/arrangementStore';
+import { useTransportStore } from '../../store/transportStore';
 import { focusSection } from '../../features/arrangement/focusSection';
 
 function sectionLabel(name: string): string {
@@ -10,14 +11,17 @@ function sectionLabel(name: string): string {
 export function SectionTimelineStrip() {
   const project = useProjectStore((s) => s.project);
   const pixelsPerSecond = useUIStore((s) => s.pixelsPerSecond);
+  const currentTime = useTransportStore((s) => s.currentTime);
   const workspace = useArrangementStore((s) =>
     project ? s.workspacesByProjectId[project.id] ?? null : null,
   );
+  const totalDuration = project?.totalDuration ?? 0;
+  const totalWidth = totalDuration * pixelsPerSecond;
+  const playheadX = Math.max(0, Math.min(currentTime * pixelsPerSecond, totalWidth));
 
   if (!project || !workspace || workspace.sections.length === 0) return null;
 
   const sortedSections = [...workspace.sections].sort((a, b) => a.startTime - b.startTime);
-  const totalWidth = project.totalDuration * pixelsPerSecond;
 
   return (
     <div
@@ -44,6 +48,12 @@ export function SectionTimelineStrip() {
           </button>
         );
       })}
+      <div
+        className="absolute inset-y-0 z-20 pointer-events-none"
+        style={{ left: playheadX }}
+      >
+        <div className="absolute inset-y-0 w-px -translate-x-1/2 bg-daw-accent/70" />
+      </div>
     </div>
   );
 }
