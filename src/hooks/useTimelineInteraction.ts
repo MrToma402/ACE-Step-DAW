@@ -2,12 +2,18 @@ import { useCallback } from 'react';
 import { useUIStore } from '../store/uiStore';
 import { useProjectStore } from '../store/projectStore';
 import { useTransportStore } from '../store/transportStore';
-import { snapToGrid } from '../utils/time';
+import { useArrangementStore } from '../store/arrangementStore';
+import { snapTime } from '../features/arrangement/snap';
 
 export function useTimelineInteraction() {
   const pixelsPerSecond = useUIStore((s) => s.pixelsPerSecond);
   const project = useProjectStore((s) => s.project);
   const addClip = useProjectStore((s) => s.addClip);
+  const workspace = useArrangementStore((s) =>
+    project ? s.workspacesByProjectId[project.id] : undefined,
+  );
+  const snapEnabled = workspace?.settings.snapEnabled ?? true;
+  const snapResolution = workspace?.settings.snapResolution ?? '1_4';
 
   const pixelsToSeconds = useCallback(
     (px: number) => px / pixelsPerSecond,
@@ -46,14 +52,14 @@ export function useTimelineInteraction() {
       if (!project) return;
 
       const rawTime = (clickX + scrollX) / pixelsPerSecond;
-      const snappedTime = snapToGrid(rawTime, project.bpm, 1);
+      const snappedTime = snapTime(rawTime, project.bpm, snapEnabled, snapResolution);
       const beatDuration = 60 / project.bpm;
       const defaultDuration = beatDuration * project.timeSignature * 2; // 2 bars
       const endTime = Math.min(snappedTime + defaultDuration, project.totalDuration);
 
       createClipInRange(trackId, snappedTime, endTime);
     },
-    [project, pixelsPerSecond, createClipInRange],
+    [project, pixelsPerSecond, createClipInRange, snapEnabled, snapResolution],
   );
 
   const handleLaneDragSelection = useCallback(
@@ -63,11 +69,11 @@ export function useTimelineInteraction() {
       const rangeEndX = Math.max(startX, endX) + scrollX;
       const rawStart = rangeStartX / pixelsPerSecond;
       const rawEnd = rangeEndX / pixelsPerSecond;
-      const snappedStart = snapToGrid(rawStart, project.bpm, 1);
-      const snappedEnd = snapToGrid(rawEnd, project.bpm, 1);
+      const snappedStart = snapTime(rawStart, project.bpm, snapEnabled, snapResolution);
+      const snappedEnd = snapTime(rawEnd, project.bpm, snapEnabled, snapResolution);
       createClipInRange(trackId, snappedStart, snappedEnd);
     },
-    [project, pixelsPerSecond, createClipInRange],
+    [project, pixelsPerSecond, createClipInRange, snapEnabled, snapResolution],
   );
 
   const handleTimelineClick = useCallback(

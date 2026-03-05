@@ -172,6 +172,8 @@ export const useProjectStore = create<ProjectState>()(
           trackId,
           startTime: clipData.startTime,
           duration: clipData.duration,
+          arrangementSectionId: clipData.arrangementSectionId,
+          arrangementTakeId: clipData.arrangementTakeId,
           prompt: clipData.prompt,
           lyrics: clipData.lyrics,
           generationStatus: 'empty',

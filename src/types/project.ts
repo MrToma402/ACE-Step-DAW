@@ -21,6 +21,8 @@ export interface Clip {
   trackId: string;
   startTime: number;
   duration: number;
+  arrangementSectionId?: string;
+  arrangementTakeId?: string;
   prompt: string;
   lyrics: string;
   generationStatus: ClipGenerationStatus;

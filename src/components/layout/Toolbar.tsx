@@ -2,9 +2,26 @@ import { useProjectStore } from '../../store/projectStore';
 import { useUIStore } from '../../store/uiStore';
 import { useTransport } from '../../hooks/useTransport';
 import { useTransportStore } from '../../store/transportStore';
+import { useArrangementStore } from '../../store/arrangementStore';
 import { TimeDisplay } from '../transport/TimeDisplay';
 import { TempoDisplay } from '../transport/TempoDisplay';
+import { IconDropdownControl } from '../transport/IconDropdownControl';
 import type { ActiveTab } from '../../store/uiStore';
+import type { GridResolution, TimeDisplayMode } from '../../features/arrangement/types';
+
+const GRID_OPTIONS: Array<{ id: GridResolution; label: string }> = [
+  { id: '1_bar', label: '1 Bar' },
+  { id: '1_2', label: '1/2' },
+  { id: '1_4', label: '1/4' },
+  { id: '1_8', label: '1/8' },
+  { id: '1_16', label: '1/16' },
+  { id: '1_32', label: '1/32' },
+];
+
+const DISPLAY_OPTIONS: Array<{ id: TimeDisplayMode; label: string }> = [
+  { id: 'bars_beats', label: 'Bars+Beats' },
+  { id: 'seconds', label: 'Min:Sec' },
+];
 
 export function Toolbar() {
   const project = useProjectStore((s) => s.project);
@@ -14,9 +31,15 @@ export function Toolbar() {
   const setShowSettingsDialog = useUIStore((s) => s.setShowSettingsDialog);
   const setShowExportDialog = useUIStore((s) => s.setShowExportDialog);
   const setShowProjectListDialog = useUIStore((s) => s.setShowProjectListDialog);
+  const setArrangementSettings = useArrangementStore((s) => s.setSettings);
+  const arrangementWorkspace = useArrangementStore((s) =>
+    project ? s.workspacesByProjectId[project.id] ?? null : null,
+  );
   const { isPlaying, play, pause, stop } = useTransport();
   const loopEnabled = useTransportStore((s) => s.loopEnabled);
   const toggleLoop = useTransportStore((s) => s.toggleLoop);
+  const snapEnabled = arrangementWorkspace?.settings.snapEnabled ?? true;
+  const snapResolution = arrangementWorkspace?.settings.snapResolution ?? '1_4';
 
   const tabs: { id: ActiveTab; label: string; icon: string }[] = [
     { id: 'composer', label: 'Composer', icon: 'auto_awesome' },
@@ -122,6 +145,58 @@ export function Toolbar() {
           <TimeDisplay />
           <div className="h-3 w-px bg-white/10" />
           <TempoDisplay />
+          {activeTab === 'daw' && (
+            <>
+              <div className="h-3 w-px bg-white/10" />
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() =>
+                    project &&
+                    setArrangementSettings(project.id, {
+                      snapEnabled: !snapEnabled,
+                    })
+                  }
+                  disabled={!project}
+                  className={`flex items-center gap-1 px-2 py-1 rounded border border-daw-border transition-colors ${
+                    snapEnabled
+                      ? 'bg-daw-accent/15 text-daw-accent'
+                      : 'bg-black/30 text-slate-500 hover:text-slate-300'
+                  }`}
+                  title={snapEnabled ? 'Disable snap' : 'Enable snap'}
+                >
+                  <span className="material-symbols-outlined text-[14px] leading-none">grid_on</span>
+                  <span className="text-[10px] uppercase tracking-wider font-sans">Snap</span>
+                </button>
+                <IconDropdownControl
+                  icon="tune"
+                  title="Grid resolution"
+                  value={snapResolution}
+                  options={GRID_OPTIONS}
+                  disabled={!project}
+                  onChange={(value) =>
+                    project &&
+                    setArrangementSettings(project.id, {
+                      snapResolution: value,
+                      snapEnabled: true,
+                    })
+                  }
+                />
+                <IconDropdownControl
+                  icon="schedule"
+                  title="Display mode"
+                  value={arrangementWorkspace?.settings.timeDisplayMode ?? 'bars_beats'}
+                  options={DISPLAY_OPTIONS}
+                  disabled={!project}
+                  onChange={(value) =>
+                    project &&
+                    setArrangementSettings(project.id, {
+                      timeDisplayMode: value,
+                    })
+                  }
+                />
+              </div>
+            </>
+          )}
         </div>
       </div>
     </header>

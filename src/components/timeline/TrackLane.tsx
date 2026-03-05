@@ -2,8 +2,10 @@ import { useCallback, useRef, useState } from 'react';
 import type { Track } from '../../types/project';
 import { useUIStore } from '../../store/uiStore';
 import { useProjectStore } from '../../store/projectStore';
+import { useArrangementStore } from '../../store/arrangementStore';
 import { useTimelineInteraction } from '../../hooks/useTimelineInteraction';
 import { ClipBlock } from './ClipBlock';
+import { isArrangementClipSelected } from '../../features/arrangement/selection';
 
 interface TrackLaneProps {
   track: Track;
@@ -13,6 +15,9 @@ export function TrackLane({ track }: TrackLaneProps) {
   const pixelsPerSecond = useUIStore((s) => s.pixelsPerSecond);
   const clipDragPreview = useUIStore((s) => s.clipDragPreview);
   const project = useProjectStore((s) => s.project);
+  const workspace = useArrangementStore((s) =>
+    project ? s.workspacesByProjectId[project.id] ?? null : null,
+  );
   const { handleLaneClick, handleLaneDragSelection } = useTimelineInteraction();
   const [dragRange, setDragRange] = useState<{ startX: number; endX: number } | null>(null);
   const dragMovedRef = useRef(false);
@@ -54,6 +59,11 @@ export function TrackLane({ track }: TrackLaneProps) {
     window.addEventListener('mouseup', onMouseUp);
   }, [handleLaneClick, handleLaneDragSelection, totalWidth, track.id]);
 
+  const visibleClips =
+    workspace?.settings.hideInactiveTakes
+      ? track.clips.filter((clip) => isArrangementClipSelected(clip, workspace))
+      : track.clips;
+
   if (!project) return null;
 
   return (
@@ -83,7 +93,7 @@ export function TrackLane({ track }: TrackLaneProps) {
           }}
         />
       )}
-      {track.clips.map((clip) => (
+      {visibleClips.map((clip) => (
         <ClipBlock key={clip.id} clip={clip} track={track} />
       ))}
     </div>

@@ -5,6 +5,7 @@ import { TimeRuler } from './TimeRuler';
 import { TrackLane } from './TrackLane';
 import { Playhead } from './Playhead';
 import { GridOverlay } from './GridOverlay';
+import { SectionTimelineStrip } from './SectionTimelineStrip';
 
 export function Timeline() {
   const project = useProjectStore((s) => s.project);
@@ -50,6 +51,7 @@ export function Timeline() {
     >
       <div className="relative" style={{ width: totalWidth, minWidth: '100%' }}>
         <TimeRuler />
+        <SectionTimelineStrip />
 
         <div className="relative">
           <GridOverlay />

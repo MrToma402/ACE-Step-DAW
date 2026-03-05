@@ -5,6 +5,7 @@ import { TrackList } from '../tracks/TrackList';
 import { Timeline } from '../timeline/Timeline';
 import { GenerationPanel } from '../generation/GenerationPanel';
 import { MixerConsole } from '../mixer/MixerConsole';
+import { ArrangementPanel } from '../arrangement/ArrangementPanel';
 import { ClipPromptEditor } from '../generation/ClipPromptEditor';
 import { ComposerView } from '../composer/ComposerView';
 import { NewProjectDialog } from '../dialogs/NewProjectDialog';
@@ -17,6 +18,7 @@ import { useAudioEngine } from '../../hooks/useAudioEngine';
 import { useProjectStore } from '../../store/projectStore';
 import { useUIStore } from '../../store/uiStore';
 import { useTransport } from '../../hooks/useTransport';
+import { useArrangementStore } from '../../store/arrangementStore';
 
 export function AppShell() {
   const { resumeOnGesture } = useAudioEngine();
@@ -29,6 +31,9 @@ export function AppShell() {
   const deselectAll = useUIStore((s) => s.deselectAll);
   const shortcutBindings = useUIStore((s) => s.shortcutBindings);
   const setShowNewProjectDialog = useUIStore((s) => s.setShowNewProjectDialog);
+  const ensureProjectWorkspace = useArrangementStore((s) => s.ensureProjectWorkspace);
+  const selectSection = useArrangementStore((s) => s.selectSection);
+  const arrangementWorkspaces = useArrangementStore((s) => s.workspacesByProjectId);
   const { isPlaying, play, pause } = useTransport();
 
   const handleClick = useCallback(() => {
@@ -40,6 +45,21 @@ export function AppShell() {
       setShowNewProjectDialog(true);
     }
   }, []);
+
+  useEffect(() => {
+    if (!project) return;
+    ensureProjectWorkspace(project.id, project.totalDuration);
+  }, [project?.id, project?.totalDuration, ensureProjectWorkspace]);
+
+  useEffect(() => {
+    if (!project) return;
+    const workspace = arrangementWorkspaces[project.id];
+    if (!workspace || workspace.selectedSectionId) return;
+    const firstSectionId = workspace.sections[0]?.id ?? null;
+    if (firstSectionId) {
+      selectSection(project.id, firstSectionId);
+    }
+  }, [project?.id, arrangementWorkspaces, selectSection]);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -89,7 +109,10 @@ export function AppShell() {
         <>
           <div className="flex flex-1 min-h-0">
             {project && <TrackList />}
-            <Timeline />
+            <div className="flex-1 min-h-0 flex flex-col">
+              <Timeline />
+              {project && <ArrangementPanel />}
+            </div>
           </div>
           {project && showMixer && <MixerConsole />}
           {project && <GenerationPanel />}

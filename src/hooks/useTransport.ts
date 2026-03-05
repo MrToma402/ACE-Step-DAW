@@ -1,8 +1,10 @@
 import { useCallback, useEffect } from 'react';
 import { useTransportStore } from '../store/transportStore';
 import { useProjectStore } from '../store/projectStore';
+import { useArrangementStore } from '../store/arrangementStore';
 import { getAudioEngine } from './useAudioEngine';
 import { loadAudioBlobByKey } from '../services/audioFileManager';
+import { isArrangementClipSelected } from '../features/arrangement/selection';
 
 export function useTransport() {
   const isPlaying = useTransportStore((s) => s.isPlaying);
@@ -14,6 +16,7 @@ export function useTransport() {
 
     const proj = useProjectStore.getState().project;
     if (!proj) return;
+    const workspace = useArrangementStore.getState().workspacesByProjectId[proj.id] ?? null;
 
     // Collect all clips with ready isolated audio
     const clipBuffers: Array<{
@@ -27,6 +30,7 @@ export function useTransport() {
 
     for (const track of proj.tracks) {
       for (const clip of track.clips) {
+        if (!isArrangementClipSelected(clip, workspace)) continue;
         if (clip.generationStatus === 'ready' && clip.isolatedAudioKey) {
           const blob = await loadAudioBlobByKey(clip.isolatedAudioKey);
           if (blob) {
@@ -51,19 +55,26 @@ export function useTransport() {
     }
     engine.updateSoloState();
 
-    const startFrom = fromTime ?? useTransportStore.getState().currentTime;
+    const transportState = useTransportStore.getState();
+    const hasLoopRegion = transportState.loopEnd > transportState.loopStart;
+    const startFrom = fromTime ?? transportState.currentTime;
+    const loopStart = hasLoopRegion ? transportState.loopStart : 0;
+    const loopEnd = hasLoopRegion ? transportState.loopEnd : proj.totalDuration;
+    const effectiveStart = transportState.loopEnabled && hasLoopRegion
+      ? Math.max(loopStart, Math.min(startFrom, loopEnd))
+      : startFrom;
 
     // When looping, end at the last clip's endpoint instead of the full timeline
-    const { loopEnabled } = useTransportStore.getState();
+    const { loopEnabled } = transportState;
     let effectiveEnd = proj.totalDuration;
-    if (loopEnabled && clipBuffers.length > 0) {
-      const lastClipEnd = clipBuffers.reduce(
-        (max, cb) => Math.max(max, cb.startTime + cb.clipDuration), 0,
-      );
+    if (loopEnabled && hasLoopRegion) {
+      effectiveEnd = loopEnd;
+    } else if (loopEnabled && clipBuffers.length > 0) {
+      const lastClipEnd = clipBuffers.reduce((max, cb) => Math.max(max, cb.startTime + cb.clipDuration), 0);
       if (lastClipEnd > 0) effectiveEnd = lastClipEnd;
     }
 
-    engine.schedulePlayback(clipBuffers, startFrom, effectiveEnd);
+    engine.schedulePlayback(clipBuffers, effectiveStart, effectiveEnd);
     useTransportStore.getState().play();
   }, []);
 
@@ -98,8 +109,11 @@ export function useTransport() {
     engine.setOnEndedCallback(() => {
       const { loopEnabled } = useTransportStore.getState();
       if (loopEnabled) {
-        useTransportStore.getState().setCurrentTime(0);
-        play(0);
+        const state = useTransportStore.getState();
+        const hasLoopRegion = state.loopEnd > state.loopStart;
+        const restartAt = hasLoopRegion ? state.loopStart : 0;
+        useTransportStore.getState().setCurrentTime(restartAt);
+        play(restartAt);
       } else {
         useTransportStore.getState().stop();
       }

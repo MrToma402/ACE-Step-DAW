@@ -2,9 +2,11 @@ import { useRef, useCallback, useState } from 'react';
 import type { Clip, Track } from '../../types/project';
 import { useUIStore } from '../../store/uiStore';
 import { useProjectStore } from '../../store/projectStore';
+import { useArrangementStore } from '../../store/arrangementStore';
 import { useGeneration } from '../../hooks/useGeneration';
 import { hexToRgba } from '../../utils/color';
-import { snapToGrid } from '../../utils/time';
+import { snapTime } from '../../features/arrangement/snap';
+import { isArrangementClipSelected } from '../../features/arrangement/selection';
 
 interface ClipBlockProps {
   clip: Clip;
@@ -28,9 +30,17 @@ export function ClipBlock({ clip, track }: ClipBlockProps) {
   const removeClip = useProjectStore((s) => s.removeClip);
   const duplicateClip = useProjectStore((s) => s.duplicateClip);
   const project = useProjectStore((s) => s.project);
+  const workspace = useArrangementStore((s) =>
+    project ? s.workspacesByProjectId[project.id] : undefined,
+  );
   const { generateClip } = useGeneration();
+  const snapEnabled = workspace?.settings.snapEnabled ?? true;
+  const snapResolution = workspace?.settings.snapResolution ?? '1_4';
 
   const peaks = clip.waveformPeaks;
+  const arrangementSelected = isArrangementClipSelected(clip, workspace ?? null);
+  const isArrangementClip = Boolean(clip.arrangementSectionId && clip.arrangementTakeId);
+  const hideInactiveTakes = workspace?.settings.hideInactiveTakes ?? false;
 
   const left = clip.startTime * pixelsPerSecond;
   const width = clip.duration * pixelsPerSecond;
@@ -86,7 +96,7 @@ export function ClipBlock({ clip, track }: ClipBlockProps) {
       const deltaSec = dx / pixelsPerSecond;
 
       if (mode === 'move') {
-        let newStart = snapToGrid(origStart + deltaSec, bpm, 1);
+        let newStart = snapTime(origStart + deltaSec, bpm, snapEnabled, snapResolution);
         newStart = Math.max(0, Math.min(newStart, totalDuration - origDuration));
         latestStart = newStart;
         const hoverTrackId = findDropTargetTrackId(ev.clientX, ev.clientY) ?? track.id;
@@ -105,7 +115,7 @@ export function ClipBlock({ clip, track }: ClipBlockProps) {
         }
         updateClip(clip.id, { startTime: newStart });
       } else if (mode === 'resize-left') {
-        let newStart = snapToGrid(origStart + deltaSec, bpm, 1);
+        let newStart = snapTime(origStart + deltaSec, bpm, snapEnabled, snapResolution);
         newStart = Math.max(0, newStart);
         const maxStart = origStart + origDuration - MIN_CLIP_DURATION;
         newStart = Math.min(newStart, maxStart);
@@ -123,7 +133,7 @@ export function ClipBlock({ clip, track }: ClipBlockProps) {
         const newDuration = origDuration + (origStart - newStart);
         updateClip(clip.id, { startTime: newStart, duration: newDuration, audioOffset: newAudioOffset });
       } else {
-        let newDuration = snapToGrid(origDuration + deltaSec, bpm, 1);
+        let newDuration = snapTime(origDuration + deltaSec, bpm, snapEnabled, snapResolution);
         newDuration = Math.max(MIN_CLIP_DURATION, newDuration);
         newDuration = Math.min(newDuration, totalDuration - origStart);
         const maxDuration = origAudioDuration - origAudioOffset;
@@ -145,7 +155,7 @@ export function ClipBlock({ clip, track }: ClipBlockProps) {
 
     window.addEventListener('mousemove', onMouseMove);
     window.addEventListener('mouseup', onMouseUp);
-  }, [clip.id, clip.startTime, clip.duration, clip.audioOffset, clip.audioDuration, pixelsPerSecond, project, updateClip, moveClipToTrack, setClipDragPreview, track.id, track.color, getDragMode]);
+  }, [clip.id, clip.startTime, clip.duration, clip.audioOffset, clip.audioDuration, pixelsPerSecond, project, snapEnabled, snapResolution, updateClip, moveClipToTrack, setClipDragPreview, track.id, track.color, getDragMode]);
 
   const handleClick = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
@@ -206,6 +216,7 @@ export function ClipBlock({ clip, track }: ClipBlockProps) {
       <div
         className={`absolute top-1 bottom-1 rounded select-none overflow-hidden border border-white/10
           ${statusStyles[clip.generationStatus] ?? ''}
+          ${arrangementSelected || hideInactiveTakes ? '' : 'opacity-40'}
           ${isSelected ? 'ring-1 ring-daw-accent ring-offset-1 ring-offset-transparent' : ''}
           ${isDraggingThisClip ? 'opacity-50' : ''}
         `}
@@ -257,6 +268,16 @@ export function ClipBlock({ clip, track }: ClipBlockProps) {
         <div className="absolute top-1.5 left-2 right-1.5 text-[9px] font-bold text-slate-400 truncate leading-none z-10 pointer-events-none">
           {clip.prompt || '(no prompt)'}
         </div>
+
+        {isArrangementClip && (
+          <div
+            className={`absolute top-1 right-1 px-1.5 py-0.5 rounded text-[8px] uppercase tracking-wider font-bold ${
+              arrangementSelected ? 'bg-emerald-900/40 text-emerald-300' : 'bg-zinc-900/60 text-zinc-400'
+            }`}
+          >
+            {arrangementSelected ? 'Selected Take' : 'Inactive Take'}
+          </div>
+        )}
 
         {/* Status indicator */}
         {clip.generationStatus === 'generating' && (

@@ -67,6 +67,18 @@ export async function generateSingleClip(clipId: string): Promise<void> {
   }
 }
 
+export async function generateClipWithContext(
+  clipId: string,
+  previousCumulativeBlob: Blob | null,
+): Promise<Blob | null> {
+  const nextBlob = await generateClipInternal(clipId, previousCumulativeBlob);
+  const clip = useProjectStore.getState().getClipById(clipId);
+  if (!clip || clip.generationStatus !== 'ready') {
+    throw new Error(clip?.errorMessage || 'Generation failed');
+  }
+  return nextBlob;
+}
+
 async function getPreviousCumulativeBlob(clipId: string): Promise<Blob | null> {
   const { project, getTracksInGenerationOrder } = useProjectStore.getState();
   if (!project) return null;
