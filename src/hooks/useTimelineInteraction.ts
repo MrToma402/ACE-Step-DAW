@@ -19,6 +19,28 @@ export function useTimelineInteraction() {
     [pixelsPerSecond],
   );
 
+  const createClipInRange = useCallback(
+    (trackId: string, startTime: number, endTime: number) => {
+      if (!project) return;
+
+      const beatDuration = 60 / project.bpm;
+      const minDuration = Math.max(0.5, beatDuration);
+      const clippedStart = Math.max(0, Math.min(startTime, project.totalDuration));
+      const clippedEnd = Math.max(clippedStart + minDuration, Math.min(endTime, project.totalDuration));
+      const safeDuration = Math.max(minDuration, clippedEnd - clippedStart);
+
+      const clip = addClip(trackId, {
+        startTime: clippedStart,
+        duration: Math.min(safeDuration, project.totalDuration - clippedStart),
+        prompt: '',
+        lyrics: '',
+      });
+
+      useUIStore.getState().setEditingClip(clip.id);
+    },
+    [project, addClip],
+  );
+
   const handleLaneClick = useCallback(
     (trackId: string, clickX: number, scrollX: number) => {
       if (!project) return;
@@ -27,17 +49,25 @@ export function useTimelineInteraction() {
       const snappedTime = snapToGrid(rawTime, project.bpm, 1);
       const beatDuration = 60 / project.bpm;
       const defaultDuration = beatDuration * project.timeSignature * 2; // 2 bars
+      const endTime = Math.min(snappedTime + defaultDuration, project.totalDuration);
 
-      const clip = addClip(trackId, {
-        startTime: Math.max(0, snappedTime),
-        duration: Math.min(defaultDuration, project.totalDuration - snappedTime),
-        prompt: '',
-        lyrics: '',
-      });
-
-      useUIStore.getState().setEditingClip(clip.id);
+      createClipInRange(trackId, snappedTime, endTime);
     },
-    [project, pixelsPerSecond, addClip],
+    [project, pixelsPerSecond, createClipInRange],
+  );
+
+  const handleLaneDragSelection = useCallback(
+    (trackId: string, startX: number, endX: number, scrollX: number) => {
+      if (!project) return;
+      const rangeStartX = Math.min(startX, endX) + scrollX;
+      const rangeEndX = Math.max(startX, endX) + scrollX;
+      const rawStart = rangeStartX / pixelsPerSecond;
+      const rawEnd = rangeEndX / pixelsPerSecond;
+      const snappedStart = snapToGrid(rawStart, project.bpm, 1);
+      const snappedEnd = snapToGrid(rawEnd, project.bpm, 1);
+      createClipInRange(trackId, snappedStart, snappedEnd);
+    },
+    [project, pixelsPerSecond, createClipInRange],
   );
 
   const handleTimelineClick = useCallback(
@@ -53,6 +83,7 @@ export function useTimelineInteraction() {
     pixelsToSeconds,
     secondsToPixels,
     handleLaneClick,
+    handleLaneDragSelection,
     handleTimelineClick,
   };
 }

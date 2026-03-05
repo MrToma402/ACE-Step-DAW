@@ -3,6 +3,7 @@ import { useProjectStore } from '../../store/projectStore';
 import { useUIStore } from '../../store/uiStore';
 import { useGeneration } from '../../hooks/useGeneration';
 import { KEY_SCALES, TIME_SIGNATURES } from '../../constants/tracks';
+import { normalizeSeconds } from '../../utils/time';
 
 export function ClipPromptEditor() {
   const editingClipId = useUIStore((s) => s.editingClipId);
@@ -18,7 +19,7 @@ export function ClipPromptEditor() {
   const [prompt, setPrompt] = useState('');
   const [lyrics, setLyrics] = useState('');
   const [startTime, setStartTime] = useState(0);
-  const [duration, setDuration] = useState(0);
+  const [endTime, setEndTime] = useState(0);
   const [sampleMode, setSampleMode] = useState(false);
   const [autoExpandPrompt, setAutoExpandPrompt] = useState(true);
   // 'auto' = ACE-Step infers, null = use project default, number = manual override
@@ -31,8 +32,8 @@ export function ClipPromptEditor() {
     if (clip) {
       setPrompt(clip.prompt);
       setLyrics(clip.lyrics);
-      setStartTime(clip.startTime);
-      setDuration(clip.duration);
+      setStartTime(normalizeSeconds(clip.startTime, 3));
+      setEndTime(normalizeSeconds(clip.startTime + clip.duration, 3));
       setSampleMode(clip.sampleMode ?? false);
       setAutoExpandPrompt(clip.autoExpandPrompt ?? true);
       setOverrideBpm(clip.bpm === undefined ? 'auto' : clip.bpm);
@@ -43,12 +44,16 @@ export function ClipPromptEditor() {
 
   if (!editingClipId || !clip || !project) return null;
 
+  const normalizedStart = normalizeSeconds(Math.max(0, startTime), 3);
+  const normalizedEnd = normalizeSeconds(Math.max(normalizedStart + 0.5, endTime), 3);
+  const normalizedDuration = normalizeSeconds(normalizedEnd - normalizedStart, 3);
+
   const handleSave = () => {
     updateClip(editingClipId, {
       prompt,
       lyrics,
-      startTime: Math.max(0, startTime),
-      duration: Math.max(0.5, duration),
+      startTime: normalizedStart,
+      duration: normalizedDuration,
       bpm: overrideBpm,
       keyScale: overrideKey,
       timeSignature: overrideTimeSig,
@@ -60,7 +65,10 @@ export function ClipPromptEditor() {
 
   const handleGenerate = () => {
     updateClip(editingClipId, {
-      prompt, lyrics, startTime, duration,
+      prompt,
+      lyrics,
+      startTime: normalizedStart,
+      duration: normalizedDuration,
       bpm: overrideBpm,
       keyScale: overrideKey,
       timeSignature: overrideTimeSig,
@@ -142,25 +150,35 @@ export function ClipPromptEditor() {
               <label className="block text-xs text-zinc-400 mb-1">Start (seconds)</label>
               <input
                 type="number"
-                value={startTime}
-                onChange={(e) => setStartTime(parseFloat(e.target.value) || 0)}
+                value={normalizeSeconds(startTime, 1)}
+                onChange={(e) => {
+                  const nextStart = parseFloat(e.target.value) || 0;
+                  setStartTime(nextStart);
+                  if (nextStart + 0.5 > endTime) {
+                    setEndTime(nextStart + 0.5);
+                  }
+                }}
                 min={0}
-                step={0.5}
+                step={0.1}
                 className="w-full px-3 py-1.5 text-sm bg-daw-bg border border-daw-border rounded focus:outline-none focus:border-daw-accent"
               />
             </div>
             <div>
-              <label className="block text-xs text-zinc-400 mb-1">Duration (seconds)</label>
+              <label className="block text-xs text-zinc-400 mb-1">End (seconds)</label>
               <input
                 type="number"
-                value={duration}
-                onChange={(e) => setDuration(parseFloat(e.target.value) || 0)}
-                min={0.5}
-                step={0.5}
+                value={normalizeSeconds(endTime, 1)}
+                onChange={(e) => {
+                  const nextEnd = parseFloat(e.target.value) || 0;
+                  setEndTime(Math.max(startTime + 0.5, nextEnd));
+                }}
+                min={normalizeSeconds(startTime + 0.5, 1)}
+                step={0.1}
                 className="w-full px-3 py-1.5 text-sm bg-daw-bg border border-daw-border rounded focus:outline-none focus:border-daw-accent"
               />
             </div>
           </div>
+          <p className="text-[10px] text-zinc-500">Duration: {normalizedDuration.toFixed(1)}s</p>
 
           {/* Per-clip musical overrides */}
           <div className="border-t border-daw-border pt-3">

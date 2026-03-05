@@ -33,6 +33,11 @@ export function formatBarsBeats(
   return `${bars}.${beats}.${ticks.toString().padStart(2, '0')}`;
 }
 
+export function normalizeSeconds(value: number, precision: number = 3): number {
+  const factor = 10 ** precision;
+  return Math.round((value + Number.EPSILON) * factor) / factor;
+}
+
 export function snapToGrid(
   time: number,
   bpm: number,
@@ -40,7 +45,7 @@ export function snapToGrid(
 ): number {
   const beatDuration = 60 / bpm;
   const gridSize = beatDuration * division;
-  return Math.round(time / gridSize) * gridSize;
+  return normalizeSeconds(Math.round(time / gridSize) * gridSize);
 }
 
 export function getBarDuration(bpm: number, timeSignature: number): number {
