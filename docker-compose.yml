@@ -10,6 +10,15 @@ services:
       VITE_ACESTEP_API_TARGET: "http://host.docker.internal:3000/api/acestep"
       VITE_MODAL_LORAS_TARGET: "https://marcf--acestep-acestepinference-api-list-loras.modal.run"
       VITE_MODAL_GENERATE_TARGET: "https://marcf--acestep-acestepinference-api-generate.modal.run"
+      CHOKIDAR_USEPOLLING: "true"
+      CHOKIDAR_INTERVAL: "200"
+      WATCHPACK_POLLING: "true"
+    volumes:
+      - ./:/app
+      - ace_step_new_node_modules:/app/node_modules
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped
+
+volumes:
+  ace_step_new_node_modules:
