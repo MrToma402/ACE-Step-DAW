@@ -57,6 +57,10 @@ function computeTotalDuration(tracks: Track[]): number {
   return Math.max(MIN_TIMELINE_DURATION, maxEnd + TIMELINE_PADDING);
 }
 
+function getTrackGenerationPriority(track: Track): number {
+  return TRACK_CATALOG[track.trackName]?.defaultOrder ?? track.order;
+}
+
 export const useProjectStore = create<ProjectState>()(
   persist(
     (set, get) => ({
@@ -385,7 +389,11 @@ export const useProjectStore = create<ProjectState>()(
       getTracksInGenerationOrder: () => {
         const project = get().project;
         if (!project) return [];
-        return [...project.tracks].sort((a, b) => b.order - a.order);
+        return [...project.tracks].sort((a, b) => {
+          const priorityDelta = getTrackGenerationPriority(b) - getTrackGenerationPriority(a);
+          if (priorityDelta !== 0) return priorityDelta;
+          return b.order - a.order;
+        });
       },
 
       getTotalDuration: () => {

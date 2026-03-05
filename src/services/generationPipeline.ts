@@ -5,7 +5,6 @@ import type { LegoTaskParams, TaskResultItem } from '../types/api';
 import type { InferredMetas } from '../types/project';
 import * as api from './aceStepApi';
 import { generateViaModal } from './modalApi';
-import { TRACK_CATALOG } from '../constants/tracks';
 import { generateSilenceWav } from './silenceGenerator';
 import { saveAudioBlob, loadAudioBlobByKey } from './audioFileManager';
 import { getAudioEngine } from '../hooks/useAudioEngine';
@@ -13,6 +12,7 @@ import { isolateTrackAudio } from '../engine/waveSubtraction';
 import { audioBufferToWavBlob } from '../utils/wav';
 import { computeWaveformPeaks } from '../utils/waveformPeaks';
 import { POLL_INTERVAL_MS, MAX_POLL_DURATION_MS } from '../constants/defaults';
+import { buildLegoPromptContent } from './legoPromptBuilder';
 
 /**
  * Generate all tracks sequentially (bottom → top in generation order).
@@ -132,27 +132,24 @@ async function generateClipInternal(
     // Determine src_audio
     const srcAudioBlob = previousCumulativeBlob ?? generateSilenceWav(project.totalDuration);
 
-    // Build instruction
-    const instruction = `Generate the ${track.trackName.toUpperCase().replace('_', ' ')} track based on the audio context:`;
-
-    // Prepend track-type default prompt to user prompt
-    const trackInfo = TRACK_CATALOG[track.trackName];
-    const defaultPrompt = trackInfo?.defaultPrompt || '';
-    const combinedPrompt = defaultPrompt && clip.prompt
-      ? `${defaultPrompt}, ${clip.prompt}`
-      : defaultPrompt || clip.prompt;
-
     // Build params — 'auto' = ACE-Step infers, null/undefined = project defaults, value = manual
     const resolvedBpm = clip.bpm === 'auto' ? null : (clip.bpm ?? project.bpm);
     const resolvedKey = clip.keyScale === 'auto' ? '' : (clip.keyScale ?? project.keyScale);
     const resolvedTimeSig = clip.timeSignature === 'auto' ? '' : String(clip.timeSignature ?? project.timeSignature);
+    const legoPrompt = buildLegoPromptContent({
+      clip,
+      track,
+      bpm: resolvedBpm,
+      keyScale: resolvedKey,
+      timeSignature: resolvedTimeSig,
+    });
 
     const params: LegoTaskParams = {
       task_type: 'lego',
       track_name: track.trackName,
-      prompt: combinedPrompt,
+      prompt: legoPrompt.prompt,
       lyrics: clip.lyrics || '',
-      instruction,
+      instruction: legoPrompt.instruction,
       repainting_start: clip.startTime,
       repainting_end: clip.startTime + clip.duration,
       audio_duration: project.totalDuration,
