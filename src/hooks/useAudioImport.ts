@@ -30,6 +30,8 @@ export function useAudioImport() {
   const addTrack = useProjectStore((s) => s.addTrack);
   const addClip = useProjectStore((s) => s.addClip);
   const updateClipStatus = useProjectStore((s) => s.updateClipStatus);
+  const isImportingAudio = useUIStore((s) => s.isImportingAudio);
+  const setIsImportingAudio = useUIStore((s) => s.setIsImportingAudio);
 
   /**
    * Import audio into an existing track (adds a clip to that track).
@@ -38,129 +40,139 @@ export function useAudioImport() {
     const project = useProjectStore.getState().project;
     if (!project) return;
 
-    const engine = getAudioEngine();
-    await engine.resume();
+    setIsImportingAudio(true);
+    try {
+      const engine = getAudioEngine();
+      await engine.resume();
 
-    const arrayBuffer = await file.arrayBuffer();
-    const audioBuffer = await engine.ctx.decodeAudioData(arrayBuffer);
-    const duration = audioBuffer.duration;
+      const arrayBuffer = await file.arrayBuffer();
+      const audioBuffer = await engine.ctx.decodeAudioData(arrayBuffer);
+      const duration = audioBuffer.duration;
 
-    // Find the latest clip end on this track to place the new clip after it
-    const track = useProjectStore.getState().getTrackById(trackId);
-    let startTime = 0;
-    if (track) {
-      for (const clip of track.clips) {
-        const end = clip.startTime + clip.duration;
-        if (end > startTime) startTime = end;
+      // Find the latest clip end on this track to place the new clip after it
+      const track = useProjectStore.getState().getTrackById(trackId);
+      let startTime = 0;
+      if (track) {
+        for (const clip of track.clips) {
+          const end = clip.startTime + clip.duration;
+          if (end > startTime) startTime = end;
+        }
       }
-    }
 
-    // Do not clip to current timeline length; project duration will expand after addClip.
-    const clipDuration = duration;
-    if (clipDuration <= 0) return;
+      // Do not clip to current timeline length; project duration will expand after addClip.
+      const clipDuration = duration;
+      if (clipDuration <= 0) return;
 
-    const clip = addClip(trackId, {
-      startTime,
-      duration: clipDuration,
-      prompt: `Imported: ${file.name}`,
-      lyrics: '',
-    });
+      const clip = addClip(trackId, {
+        startTime,
+        duration: clipDuration,
+        prompt: `Imported: ${file.name}`,
+        lyrics: '',
+      });
 
-    // Trim the buffer to clip duration if needed
-    const sampleRate = audioBuffer.sampleRate;
-    const trimmedLength = Math.min(
-      Math.floor(clipDuration * sampleRate),
-      audioBuffer.length,
-    );
-    const trimmedBuffer = engine.ctx.createBuffer(
-      audioBuffer.numberOfChannels,
-      trimmedLength,
-      sampleRate,
-    );
-    for (let ch = 0; ch < audioBuffer.numberOfChannels; ch++) {
-      const src = audioBuffer.getChannelData(ch);
-      const dst = trimmedBuffer.getChannelData(ch);
-      for (let i = 0; i < trimmedLength; i++) {
-        dst[i] = src[i];
+      // Trim the buffer to clip duration if needed
+      const sampleRate = audioBuffer.sampleRate;
+      const trimmedLength = Math.min(
+        Math.floor(clipDuration * sampleRate),
+        audioBuffer.length,
+      );
+      const trimmedBuffer = engine.ctx.createBuffer(
+        audioBuffer.numberOfChannels,
+        trimmedLength,
+        sampleRate,
+      );
+      for (let ch = 0; ch < audioBuffer.numberOfChannels; ch++) {
+        const src = audioBuffer.getChannelData(ch);
+        const dst = trimmedBuffer.getChannelData(ch);
+        for (let i = 0; i < trimmedLength; i++) {
+          dst[i] = src[i];
+        }
       }
+
+      const wavBlob = audioBufferToWavBlob(trimmedBuffer);
+      const isolatedKey = await saveAudioBlob(project.id, clip.id, 'isolated', wavBlob);
+      const peaks = computeWaveformPeaks(trimmedBuffer, 200);
+
+      updateClipStatus(clip.id, 'ready', {
+        isolatedAudioKey: isolatedKey,
+        waveformPeaks: peaks,
+        audioDuration: clipDuration,
+        audioOffset: 0,
+      });
+      revealImportedClip(clip.id);
+    } finally {
+      setIsImportingAudio(false);
     }
-
-    const wavBlob = audioBufferToWavBlob(trimmedBuffer);
-    const isolatedKey = await saveAudioBlob(project.id, clip.id, 'isolated', wavBlob);
-    const peaks = computeWaveformPeaks(trimmedBuffer, 200);
-
-    updateClipStatus(clip.id, 'ready', {
-      isolatedAudioKey: isolatedKey,
-      waveformPeaks: peaks,
-      audioDuration: clipDuration,
-      audioOffset: 0,
-    });
-    revealImportedClip(clip.id);
-  }, [addClip, updateClipStatus]);
+  }, [addClip, updateClipStatus, setIsImportingAudio]);
 
   const importAudioFile = useCallback(async (file: File) => {
     const project = useProjectStore.getState().project;
     if (!project) return;
 
-    const engine = getAudioEngine();
-    await engine.resume();
+    setIsImportingAudio(true);
+    try {
+      const engine = getAudioEngine();
+      await engine.resume();
 
-    // Decode the audio file
-    const arrayBuffer = await file.arrayBuffer();
-    const audioBuffer = await engine.ctx.decodeAudioData(arrayBuffer);
-    const duration = audioBuffer.duration;
+      // Decode the audio file
+      const arrayBuffer = await file.arrayBuffer();
+      const audioBuffer = await engine.ctx.decodeAudioData(arrayBuffer);
+      const duration = audioBuffer.duration;
 
-    // Create a custom track
-    const track = addTrack('custom');
-    // Rename to the file name
-    useProjectStore.getState().updateTrack(track.id, {
-      displayName: file.name.replace(/\.[^.]+$/, ''),
-    });
+      // Create a custom track
+      const track = addTrack('custom');
+      // Rename to the file name
+      useProjectStore.getState().updateTrack(track.id, {
+        displayName: file.name.replace(/\.[^.]+$/, ''),
+      });
 
-    // Keep full imported duration and let timeline auto-expand.
-    const clipDuration = duration;
-    const clip = addClip(track.id, {
-      startTime: 0,
-      duration: clipDuration,
-      prompt: `Imported: ${file.name}`,
-      lyrics: '',
-    });
+      // Keep full imported duration and let timeline auto-expand.
+      const clipDuration = duration;
+      const clip = addClip(track.id, {
+        startTime: 0,
+        duration: clipDuration,
+        prompt: `Imported: ${file.name}`,
+        lyrics: '',
+      });
 
-    // Trim the buffer to clip duration if needed
-    const sampleRate = audioBuffer.sampleRate;
-    const trimmedLength = Math.min(
-      Math.floor(clipDuration * sampleRate),
-      audioBuffer.length,
-    );
-    const trimmedBuffer = engine.ctx.createBuffer(
-      audioBuffer.numberOfChannels,
-      trimmedLength,
-      sampleRate,
-    );
-    for (let ch = 0; ch < audioBuffer.numberOfChannels; ch++) {
-      const src = audioBuffer.getChannelData(ch);
-      const dst = trimmedBuffer.getChannelData(ch);
-      for (let i = 0; i < trimmedLength; i++) {
-        dst[i] = src[i];
+      // Trim the buffer to clip duration if needed
+      const sampleRate = audioBuffer.sampleRate;
+      const trimmedLength = Math.min(
+        Math.floor(clipDuration * sampleRate),
+        audioBuffer.length,
+      );
+      const trimmedBuffer = engine.ctx.createBuffer(
+        audioBuffer.numberOfChannels,
+        trimmedLength,
+        sampleRate,
+      );
+      for (let ch = 0; ch < audioBuffer.numberOfChannels; ch++) {
+        const src = audioBuffer.getChannelData(ch);
+        const dst = trimmedBuffer.getChannelData(ch);
+        for (let i = 0; i < trimmedLength; i++) {
+          dst[i] = src[i];
+        }
       }
+
+      // Convert to WAV and store
+      const wavBlob = audioBufferToWavBlob(trimmedBuffer);
+      const isolatedKey = await saveAudioBlob(project.id, clip.id, 'isolated', wavBlob);
+
+      // Compute waveform peaks
+      const peaks = computeWaveformPeaks(trimmedBuffer, 200);
+
+      // Mark clip as ready
+      updateClipStatus(clip.id, 'ready', {
+        isolatedAudioKey: isolatedKey,
+        waveformPeaks: peaks,
+        audioDuration: clipDuration,
+        audioOffset: 0,
+      });
+      revealImportedClip(clip.id);
+    } finally {
+      setIsImportingAudio(false);
     }
-
-    // Convert to WAV and store
-    const wavBlob = audioBufferToWavBlob(trimmedBuffer);
-    const isolatedKey = await saveAudioBlob(project.id, clip.id, 'isolated', wavBlob);
-
-    // Compute waveform peaks
-    const peaks = computeWaveformPeaks(trimmedBuffer, 200);
-
-    // Mark clip as ready
-    updateClipStatus(clip.id, 'ready', {
-      isolatedAudioKey: isolatedKey,
-      waveformPeaks: peaks,
-      audioDuration: clipDuration,
-      audioOffset: 0,
-    });
-    revealImportedClip(clip.id);
-  }, [addTrack, addClip, updateClipStatus]);
+  }, [addTrack, addClip, updateClipStatus, setIsImportingAudio]);
 
   const openAudioPicker = useCallback((onFile: (file: File) => Promise<void>) => {
     const input = document.createElement('input');
@@ -200,5 +212,11 @@ export function useAudioImport() {
     openAudioPicker((file) => importAudioToTrack(file, trackId));
   }, [importAudioToTrack, openAudioPicker]);
 
-  return { importAudioFile, importAudioToTrack, openFilePicker, openFilePickerForTrack };
+  return {
+    importAudioFile,
+    importAudioToTrack,
+    openFilePicker,
+    openFilePickerForTrack,
+    isImportingAudio,
+  };
 }

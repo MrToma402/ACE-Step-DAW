@@ -20,11 +20,15 @@ export function VocalProductionPanel({ project, profile, onPatch }: VocalProduct
     input.onchange = async () => {
       const file = input.files?.[0];
       if (!file) return;
-      await importAudioToTrack(file, vocalTrack.id);
-      onPatch({
-        enabled: true,
-        sourceFileName: file.name,
-      });
+      try {
+        await importAudioToTrack(file, vocalTrack.id);
+        onPatch({
+          enabled: true,
+          sourceFileName: file.name,
+        });
+      } catch (error) {
+        console.error('Vocal audio import failed:', error);
+      }
     };
     input.click();
   };

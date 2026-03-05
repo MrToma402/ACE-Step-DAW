@@ -21,6 +21,7 @@ interface UIState {
   pixelsPerSecond: number;
   scrollX: number;
   scrollY: number;
+  isImportingAudio: boolean;
   selectedClipIds: Set<string>;
   editingClipId: string | null;
   showNewProjectDialog: boolean;
@@ -39,6 +40,7 @@ interface UIState {
   zoomOut: () => void;
   setScrollX: (x: number) => void;
   setScrollY: (y: number) => void;
+  setIsImportingAudio: (v: boolean) => void;
   selectClip: (clipId: string, multi?: boolean) => void;
   deselectAll: () => void;
   setEditingClip: (clipId: string | null) => void;
@@ -65,6 +67,7 @@ export const useUIStore = create<UIState>((set) => ({
   pixelsPerSecond: 50,
   scrollX: 0,
   scrollY: 0,
+  isImportingAudio: false,
   selectedClipIds: new Set(),
   editingClipId: null,
   showNewProjectDialog: false,
@@ -96,6 +99,7 @@ export const useUIStore = create<UIState>((set) => ({
 
   setScrollX: (x) => set({ scrollX: x }),
   setScrollY: (y) => set({ scrollY: y }),
+  setIsImportingAudio: (v) => set({ isImportingAudio: v }),
 
   selectClip: (clipId, multi) =>
     set((s) => {

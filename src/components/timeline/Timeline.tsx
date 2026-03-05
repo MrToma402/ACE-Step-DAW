@@ -11,6 +11,7 @@ export function Timeline() {
   const project = useProjectStore((s) => s.project);
   const pixelsPerSecond = useUIStore((s) => s.pixelsPerSecond);
   const setPixelsPerSecond = useUIStore((s) => s.setPixelsPerSecond);
+  const isImportingAudio = useUIStore((s) => s.isImportingAudio);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const sortedTracks = project
@@ -48,7 +49,7 @@ export function Timeline() {
       <div
         ref={scrollRef}
         data-timeline-scroll-container="true"
-        className="timeline-scroll flex-1 min-h-0 min-w-0 overflow-x-auto overflow-y-auto"
+        className="timeline-scroll relative flex-1 min-h-0 min-w-0 overflow-x-auto overflow-y-auto"
         onWheel={handleWheel}
       >
         <div className="relative" style={{ width: totalWidth, minWidth: '100%' }}>
@@ -70,6 +71,14 @@ export function Timeline() {
             )}
           </div>
         </div>
+        {isImportingAudio && (
+          <div className="absolute inset-0 z-30 pointer-events-none flex items-center justify-center">
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded border border-daw-border bg-black/70 text-[10px] font-bold uppercase tracking-[0.14em] text-blue-300">
+              <span className="w-3 h-3 border border-current border-t-transparent rounded-full animate-spin" />
+              Importing audio
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
