@@ -1,0 +1,15 @@
+services:
+  ace-step-new:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ace-step-new
+    ports:
+      - "5175:5174"
+    environment:
+      VITE_ACESTEP_API_TARGET: "http://host.docker.internal:3000/api/acestep"
+      VITE_MODAL_LORAS_TARGET: "https://marcf--acestep-acestepinference-api-list-loras.modal.run"
+      VITE_MODAL_GENERATE_TARGET: "https://marcf--acestep-acestepinference-api-generate.modal.run"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
