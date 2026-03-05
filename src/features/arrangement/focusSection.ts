@@ -32,6 +32,14 @@ export function focusSection(projectId: string, sectionId: string): void {
   const section = workspace.sections.find((item) => item.id === sectionId);
   if (!section) return;
 
+  const alreadySelected = workspace.selectedSectionId === sectionId;
+  if (alreadySelected) {
+    useArrangementStore.getState().selectSection(projectId, null);
+    useTransportStore.getState().setLoopRegion(0, 0);
+    useUIStore.setState({ selectedClipIds: new Set() });
+    return;
+  }
+
   useArrangementStore.getState().selectSection(projectId, sectionId);
   useTransportStore.getState().seek(section.startTime);
   useTransportStore.getState().setLoopRegion(section.startTime, section.endTime);

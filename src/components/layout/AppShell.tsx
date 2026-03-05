@@ -33,8 +33,6 @@ export function AppShell() {
   const shortcutBindings = useUIStore((s) => s.shortcutBindings);
   const setShowNewProjectDialog = useUIStore((s) => s.setShowNewProjectDialog);
   const ensureProjectWorkspace = useArrangementStore((s) => s.ensureProjectWorkspace);
-  const selectSection = useArrangementStore((s) => s.selectSection);
-  const arrangementWorkspaces = useArrangementStore((s) => s.workspacesByProjectId);
   const { isPlaying, play, pause } = useTransport();
   const { sidebarWidth, mixerHeight, startSidebarResize, startMixerResize } = useDawLayoutResize();
 
@@ -52,16 +50,6 @@ export function AppShell() {
     if (!project) return;
     ensureProjectWorkspace(project.id, project.totalDuration);
   }, [project?.id, project?.totalDuration, ensureProjectWorkspace]);
-
-  useEffect(() => {
-    if (!project) return;
-    const workspace = arrangementWorkspaces[project.id];
-    if (!workspace || workspace.selectedSectionId) return;
-    const firstSectionId = workspace.sections[0]?.id ?? null;
-    if (firstSectionId) {
-      selectSection(project.id, firstSectionId);
-    }
-  }, [project?.id, arrangementWorkspaces, selectSection]);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {

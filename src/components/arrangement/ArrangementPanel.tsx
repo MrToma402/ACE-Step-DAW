@@ -51,7 +51,7 @@ export function ArrangementPanel() {
   if (!workspace) return null;
 
   const sections = sortSections(workspace.sections);
-  const selectedSectionId = workspace.selectedSectionId ?? sections[0]?.id ?? null;
+  const selectedSectionId = workspace.selectedSectionId;
   const selectedSection = selectedSectionId
     ? sections.find((section) => section.id === selectedSectionId) ?? null
     : null;
