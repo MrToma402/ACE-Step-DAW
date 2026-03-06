@@ -1,7 +1,8 @@
 import { useCallback } from 'react';
 import { useGenerationStore } from '../store/generationStore';
 import { useProjectStore } from '../store/projectStore';
-import { generateAllTracks, generateSingleClip } from '../services/generationPipeline';
+import { generateAllTracks, generateClipWithContext, generateSingleClip } from '../services/generationPipeline';
+import { loadAudioBlobByKey } from '../services/audioFileManager';
 import type { Project, Track, Clip } from '../types/project';
 
 const GAP_EPSILON_SECONDS = 0.05;
@@ -28,6 +29,7 @@ function getSongEnd(project: Project): number {
 
 export function useGeneration() {
   const { jobs, isGenerating } = useGenerationStore();
+  const setIsGenerating = useGenerationStore((s) => s.setIsGenerating);
   const project = useProjectStore((s) => s.project);
   const getClipById = useProjectStore((s) => s.getClipById);
   const getTrackForClip = useProjectStore((s) => s.getTrackForClip);
@@ -91,5 +93,29 @@ export function useGeneration() {
     }
   }, [project, isGenerating, getClipById, getTrackForClip, addClip, updateClip]);
 
-  return { jobs, isGenerating, generateAll, generateClip };
+  const generateClipWithSourceContext = useCallback(async (clipId: string, sourceClipId: string) => {
+    if (!project || isGenerating) return;
+
+    const sourceClip = getClipById(sourceClipId);
+    const contextKey = sourceClip?.cumulativeMixKey ?? null;
+    if (!contextKey) {
+      await generateSingleClip(clipId);
+      return;
+    }
+
+    const contextBlob = await loadAudioBlobByKey(contextKey);
+    if (!contextBlob) {
+      await generateSingleClip(clipId);
+      return;
+    }
+
+    setIsGenerating(true);
+    try {
+      await generateClipWithContext(clipId, contextBlob);
+    } finally {
+      setIsGenerating(false);
+    }
+  }, [project, isGenerating, getClipById, setIsGenerating]);
+
+  return { jobs, isGenerating, generateAll, generateClip, generateClipWithSourceContext };
 }

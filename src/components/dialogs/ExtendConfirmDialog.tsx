@@ -10,7 +10,7 @@ export function ExtendConfirmDialog() {
   const getClipById = useProjectStore((s) => s.getClipById);
   const updateClip = useProjectStore((s) => s.updateClip);
   const addClip = useProjectStore((s) => s.addClip);
-  const { generateClip, isGenerating } = useGeneration();
+  const { generateClipWithSourceContext, isGenerating } = useGeneration();
 
   if (!request) return null;
 
@@ -50,7 +50,7 @@ export function ExtendConfirmDialog() {
       });
 
       closeDialog();
-      void generateClip(continuationClip.id);
+      void generateClipWithSourceContext(continuationClip.id, request.clipId);
       return;
     }
 
