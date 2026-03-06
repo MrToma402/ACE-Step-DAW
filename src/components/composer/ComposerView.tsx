@@ -148,7 +148,7 @@ export function ComposerView() {
                 srcBlob = srcAudioFile;
             }
             const params = buildParams();
-            // Inject lora_name if selected (will be passed through to Modal)
+            // Inject lora_name if selected (passed through to API task payload)
             if (selectedLora) {
                 (params as unknown as Record<string, unknown>).lora_name = selectedLora;
             }
@@ -165,7 +165,7 @@ export function ComposerView() {
                     );
                 }
             } else {
-                setProgress('Generating via Modal...');
+                setProgress('Generating...');
                 const result = await generateViaModal(srcBlob, params);
                 const id = `${Date.now()}`;
                 const name = `${mode}_${Date.now()}.${audioFormat}`;

@@ -8,7 +8,7 @@ Deploy:
     modal deploy modal/deploy_acestep.py
 
 Endpoint URL:
-    https://marcf--acestep-acestepinference-api-generate.modal.run
+    Provided by `modal deploy` output for your Modal app.
 """
 
 import modal

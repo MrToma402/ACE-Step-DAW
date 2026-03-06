@@ -80,8 +80,8 @@ export function SettingsDialog() {
         <div className="p-4 space-y-3">
           <div className="flex items-center justify-between p-2 bg-daw-bg rounded border border-daw-border">
             <div>
-              <span className="text-xs font-medium text-zinc-300">⚡ Modal Cloud</span>
-              <p className="text-[10px] text-zinc-500 mt-0.5">Use Modal deployment instead of local server</p>
+              <span className="text-xs font-medium text-zinc-300">⚡ Fast Request Path</span>
+              <p className="text-[10px] text-zinc-500 mt-0.5">Use JSON/base64 submission path for generation</p>
             </div>
             <label className="relative inline-flex items-center cursor-pointer">
               <input

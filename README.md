@@ -5,7 +5,8 @@ A browser-based Digital Audio Workstation that uses [ACE-Step 1.5](https://githu
 ## Requirements
 
 - **Node.js** 18+
-- **ACE-Step 1.5 API server** running on `localhost:8001` (default)
+- **ACE-Step 1.5 API server** running on `localhost:7860` (default)
+- If your API enforces bearer auth (`ACESTEP_API_KEY`), set `API_ACCESS_KEY` for the DAW environment
 
 ## Quick Start
 
@@ -14,7 +15,7 @@ npm install
 npm run dev
 ```
 
-Opens at [http://localhost:5176](http://localhost:5176). The dev server proxies `/api` requests to the ACE-Step 1.5 backend at `localhost:8001`.
+Opens at [http://localhost:5176](http://localhost:5176). The app calls the ACE-Step API directly.
 
 ### Production Build
 
@@ -95,17 +96,12 @@ src/
 
 ## Configuration
 
-The ACE-Step 1.5 API URL is configured in `vite.config.ts` under `server.proxy`. Change the `target` if your server runs on a different host/port:
+Set the API base URL with Vite env vars:
 
-```ts
-proxy: {
-  '/api': {
-    target: 'http://localhost:8001',  // ← your ACE-Step 1.5 server
-    changeOrigin: true,
-    rewrite: (path) => path.replace(/^\/api/, ''),
-  },
-},
-```
+- `VITE_ACESTEP_API_BASE` (preferred)
+- `VITE_ACESTEP_API_KEY` (optional bearer key)
+
+If none are set, the client falls back to `http://localhost:7860`.
 
 ## Tech Stack
 

@@ -184,13 +184,13 @@ async function generateClipInternal(
     let firstResult: TaskResultItem | null = null;
 
     if (project.generationDefaults.useModal ?? true) {
-      // ── Modal path: synchronous generation ──
-      useGenerationStore.getState().updateJob(jobId, { progress: 'Generating via Modal (this may take a minute)...' });
+      // ── Fast JSON submission path ──
+      useGenerationStore.getState().updateJob(jobId, { progress: 'Generating (this may take a minute)...' });
 
       const modalResult = await generateViaModal(srcAudioBlob, params);
       cumulativeBlob = modalResult.audioBlob;
 
-      // Build a pseudo TaskResultItem from Modal response
+      // Build a pseudo TaskResultItem from direct API response
       if (modalResult.metas && Object.keys(modalResult.metas).length > 0) {
         firstResult = {
           file: '',

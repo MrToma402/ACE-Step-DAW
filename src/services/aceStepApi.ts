@@ -6,12 +6,11 @@ import type {
   ModelsListResponse,
   StatsResponse,
 } from '../types/api';
-
-const API_BASE = '/api';
+import { apiFetch, buildApiUrl } from './apiClient';
 
 export async function healthCheck(): Promise<boolean> {
   try {
-    const res = await fetch(`${API_BASE}/health`);
+    const res = await apiFetch('/health');
     return res.ok;
   } catch {
     return false;
@@ -19,14 +18,14 @@ export async function healthCheck(): Promise<boolean> {
 }
 
 export async function listModels(): Promise<ModelsListResponse> {
-  const res = await fetch(`${API_BASE}/v1/models`);
+  const res = await apiFetch('/v1/models');
   if (!res.ok) throw new Error(`listModels failed: ${res.status}`);
   const envelope: ApiEnvelope<ModelsListResponse> = await res.json();
   return envelope.data;
 }
 
 export async function getStats(): Promise<StatsResponse> {
-  const res = await fetch(`${API_BASE}/v1/stats`);
+  const res = await apiFetch('/v1/stats');
   if (!res.ok) throw new Error(`getStats failed: ${res.status}`);
   const envelope: ApiEnvelope<StatsResponse> = await res.json();
   return envelope.data;
@@ -47,7 +46,7 @@ export async function releaseLegoTask(
     formData.append(key, String(value));
   }
 
-  const res = await fetch(`${API_BASE}/release_task`, {
+  const res = await apiFetch('/release_task', {
     method: 'POST',
     body: formData,
   });
@@ -62,7 +61,7 @@ export async function releaseLegoTask(
 }
 
 export async function queryResult(taskIds: string[]): Promise<TaskResultEntry[]> {
-  const res = await fetch(`${API_BASE}/query_result`, {
+  const res = await apiFetch('/query_result', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ task_id_list: taskIds }),
@@ -74,16 +73,17 @@ export async function queryResult(taskIds: string[]): Promise<TaskResultEntry[]>
 }
 
 export async function downloadAudio(audioPath: string): Promise<Blob> {
-  // The file field from query_result may already be a full URL path like
-  // "/v1/audio?path=%2FUsers%2F..." — use it directly via the proxy.
-  // Or it may be a bare filesystem path — construct the URL ourselves.
+  // The file field may already be "/v1/audio?path=..." or a full URL.
+  // Otherwise treat it as a server filesystem path for /v1/audio.
   let url: string;
-  if (audioPath.startsWith('/v1/')) {
-    url = `${API_BASE}${audioPath}`;
+  if (/^https?:\/\//i.test(audioPath)) {
+    url = audioPath;
+  } else if (audioPath.startsWith('/v1/')) {
+    url = buildApiUrl(audioPath);
   } else {
-    url = `${API_BASE}/v1/audio?path=${encodeURIComponent(audioPath)}`;
+    url = buildApiUrl(`/v1/audio?path=${encodeURIComponent(audioPath)}`);
   }
-  const res = await fetch(url);
+  const res = await apiFetch(url);
   if (!res.ok) throw new Error(`downloadAudio failed: ${res.status} ${res.statusText}`);
   return res.blob();
 }

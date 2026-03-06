@@ -10,6 +10,8 @@ import {
   MIN_BPM,
   MAX_BPM,
 } from '../../constants/defaults';
+import type { ProjectStarterAnalysis } from '../../services/projectStarterAnalysis';
+import { NewProjectAnalysisPanel } from './NewProjectAnalysisPanel';
 
 export function NewProjectDialog() {
   const show = useUIStore((s) => s.showNewProjectDialog);
@@ -40,6 +42,32 @@ export function NewProjectDialog() {
     return Math.min(MAX_BPM, Math.max(MIN_BPM, Math.round(parsed)));
   };
 
+  const applyDetectedSettings = (result: ProjectStarterAnalysis): string => {
+    const applied: string[] = [];
+
+    if (result.bpm !== null) {
+      const nextBpm = normalizeBpm(String(result.bpm));
+      setBpmInput(String(nextBpm));
+      applied.push(`BPM ${nextBpm}`);
+    }
+
+    if (result.keyScale && KEY_SCALES.includes(result.keyScale)) {
+      setKeyScale(result.keyScale);
+      applied.push(`Key ${result.keyScale}`);
+    }
+
+    if (result.timeSignature !== null && TIME_SIGNATURES.includes(result.timeSignature)) {
+      setTimeSignature(result.timeSignature);
+      applied.push(`Time ${result.timeSignature}/4`);
+    }
+
+    if (applied.length === 0) {
+      return 'Analysis completed, but no compatible BPM/key/time signature was detected.';
+    }
+
+    return `Applied project settings: ${applied.join(' • ')}`;
+  };
+
   const handleCreate = () => {
     const bpm = normalizeBpm(bpmInput);
     createProject({ name, bpm, keyScale, timeSignature });
@@ -61,6 +89,8 @@ export function NewProjectDialog() {
         </div>
 
         <div className="p-4 space-y-3">
+          <NewProjectAnalysisPanel onApplyDetectedSettings={applyDetectedSettings} />
+
           <div>
             <label className="block text-xs text-zinc-400 mb-1">Project Name</label>
             <input

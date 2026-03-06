@@ -29,7 +29,7 @@ export function StatusBar() {
           <span className={`w-2 h-2 rounded-full ${connected ? 'bg-emerald-500 shadow-[0_0_5px_rgba(16,185,129,0.5)]' : 'bg-red-500 shadow-[0_0_5px_rgba(239,68,68,0.5)]'}`} />
           {connected ? 'Engine Ready' : 'Disconnected'}
         </div>
-        <div>{useModal ? 'Modal GPU' : (model || 'Local')}</div>
+        <div>{useModal ? 'ACE-Step API' : (model || 'Local')}</div>
         <div>48kHz / 24-bit</div>
       </div>
       <div className="flex gap-6">
