@@ -14,6 +14,7 @@ import { ExportDialog } from '../dialogs/ExportDialog';
 import { SettingsDialog } from '../dialogs/SettingsDialog';
 import { ProjectListDialog } from '../dialogs/ProjectListDialog';
 import { KeyboardShortcutsDialog } from '../dialogs/KeyboardShortcutsDialog';
+import { ExtendConfirmDialog } from '../dialogs/ExtendConfirmDialog';
 import { useAudioEngine } from '../../hooks/useAudioEngine';
 import { useProjectStore } from '../../store/projectStore';
 import { useUIStore } from '../../store/uiStore';
@@ -153,6 +154,7 @@ export function AppShell() {
       <SettingsDialog />
       <KeyboardShortcutsDialog />
       <ProjectListDialog />
+      <ExtendConfirmDialog />
     </div>
   );
 }

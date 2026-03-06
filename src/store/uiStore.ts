@@ -16,6 +16,15 @@ export interface ClipDragPreview {
   color: string;
 }
 
+export interface ExtendConfirmRequest {
+  clipId: string;
+  trackId: string;
+  baseStartTime: number;
+  baseDuration: number;
+  extensionDuration: number;
+  originalGenerationStatus: 'empty' | 'queued' | 'generating' | 'processing' | 'ready' | 'error' | 'stale';
+}
+
 interface UIState {
   activeTab: ActiveTab;
   pixelsPerSecond: number;
@@ -30,6 +39,7 @@ interface UIState {
   showSettingsDialog: boolean;
   showProjectListDialog: boolean;
   showKeyboardShortcutsDialog: boolean;
+  extendConfirmRequest: ExtendConfirmRequest | null;
   showMixer: boolean;
   shortcutBindings: ShortcutBindings;
   clipDragPreview: ClipDragPreview | null;
@@ -50,6 +60,8 @@ interface UIState {
   setShowSettingsDialog: (v: boolean) => void;
   setShowProjectListDialog: (v: boolean) => void;
   setShowKeyboardShortcutsDialog: (v: boolean) => void;
+  openExtendConfirmDialog: (request: ExtendConfirmRequest) => void;
+  closeExtendConfirmDialog: () => void;
   setShortcutBinding: (action: keyof ShortcutBindings, keyCode: string) => void;
   resetShortcutBindings: () => void;
   setClipDragPreview: (preview: ClipDragPreview | null) => void;
@@ -76,6 +88,7 @@ export const useUIStore = create<UIState>((set) => ({
   showSettingsDialog: false,
   showProjectListDialog: false,
   showKeyboardShortcutsDialog: false,
+  extendConfirmRequest: null,
   showMixer: true,
   shortcutBindings: DEFAULT_SHORTCUT_BINDINGS,
   clipDragPreview: null,
@@ -121,6 +134,8 @@ export const useUIStore = create<UIState>((set) => ({
   setShowSettingsDialog: (v) => set({ showSettingsDialog: v }),
   setShowProjectListDialog: (v) => set({ showProjectListDialog: v }),
   setShowKeyboardShortcutsDialog: (v) => set({ showKeyboardShortcutsDialog: v }),
+  openExtendConfirmDialog: (request) => set({ extendConfirmRequest: request }),
+  closeExtendConfirmDialog: () => set({ extendConfirmRequest: null }),
   setShortcutBinding: (action, keyCode) =>
     set((s) => ({
       shortcutBindings: {

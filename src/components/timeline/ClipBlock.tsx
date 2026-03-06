@@ -15,6 +15,7 @@ interface ClipBlockProps {
 
 const EDGE_HANDLE_PX = 6;
 const MIN_CLIP_DURATION = 0.5;
+const EXTEND_EPSILON_SECONDS = 0.05;
 
 type DragMode = 'move' | 'resize-left' | 'resize-right';
 
@@ -25,6 +26,7 @@ export function ClipBlock({ clip, track }: ClipBlockProps) {
   const setEditingClip = useUIStore((s) => s.setEditingClip);
   const clipDragPreview = useUIStore((s) => s.clipDragPreview);
   const setClipDragPreview = useUIStore((s) => s.setClipDragPreview);
+  const openExtendConfirmDialog = useUIStore((s) => s.openExtendConfirmDialog);
   const updateClip = useProjectStore((s) => s.updateClip);
   const moveClipToTrack = useProjectStore((s) => s.moveClipToTrack);
   const removeClip = useProjectStore((s) => s.removeClip);
@@ -71,8 +73,10 @@ export function ClipBlock({ clip, track }: ClipBlockProps) {
     const origDuration = clip.duration;
     const origAudioOffset = clip.audioOffset ?? 0;
     const origAudioDuration = clip.audioDuration ?? clip.duration;
+    let latestDuration = origDuration;
     let latestStart = origStart;
     let latestHoverTrackId = track.id;
+    let extendsBeyondCurrentAudio = false;
     let lastPreviewStart = Number.NaN;
     let lastPreviewTrack = '';
     const bpm = project?.bpm ?? 120;
@@ -136,9 +140,15 @@ export function ClipBlock({ clip, track }: ClipBlockProps) {
         let newDuration = snapTime(origDuration + deltaSec, bpm, snapEnabled, snapResolution);
         newDuration = Math.max(MIN_CLIP_DURATION, newDuration);
         newDuration = Math.min(newDuration, totalDuration - origStart);
+        latestDuration = newDuration;
         const maxDuration = origAudioDuration - origAudioOffset;
-        newDuration = Math.min(newDuration, maxDuration);
-        updateClip(clip.id, { duration: newDuration });
+        extendsBeyondCurrentAudio = newDuration > maxDuration + EXTEND_EPSILON_SECONDS;
+        updateClip(clip.id, {
+          duration: newDuration,
+          generationStatus: extendsBeyondCurrentAudio && clip.generationStatus === 'ready'
+            ? 'stale'
+            : clip.generationStatus,
+        });
       }
     };
 
@@ -150,12 +160,57 @@ export function ClipBlock({ clip, track }: ClipBlockProps) {
           moveClipToTrack(clip.id, latestHoverTrackId, { startTime: latestStart });
         }
       }
+      if (
+        mode === 'resize-right'
+        && dragRef.current
+        && extendsBeyondCurrentAudio
+        && (clip.generationStatus === 'ready' || clip.generationStatus === 'stale')
+      ) {
+        const extensionDuration = latestDuration - origDuration;
+        if (extensionDuration > EXTEND_EPSILON_SECONDS) {
+          openExtendConfirmDialog({
+            clipId: clip.id,
+            trackId: track.id,
+            baseStartTime: origStart,
+            baseDuration: origDuration,
+            extensionDuration,
+            originalGenerationStatus: clip.generationStatus,
+          });
+        }
+      }
       setClipDragPreview(null);
     };
 
     window.addEventListener('mousemove', onMouseMove);
     window.addEventListener('mouseup', onMouseUp);
-  }, [clip.id, clip.startTime, clip.duration, clip.audioOffset, clip.audioDuration, pixelsPerSecond, project, snapEnabled, snapResolution, updateClip, moveClipToTrack, setClipDragPreview, track.id, track.color, getDragMode]);
+  }, [
+    clip.id,
+    clip.startTime,
+    clip.duration,
+    clip.audioOffset,
+    clip.audioDuration,
+    clip.generationStatus,
+    clip.prompt,
+    clip.lyrics,
+    clip.arrangementSectionId,
+    clip.arrangementTakeId,
+    clip.bpm,
+    clip.keyScale,
+    clip.timeSignature,
+    clip.sampleMode,
+    clip.autoExpandPrompt,
+    pixelsPerSecond,
+    project,
+    snapEnabled,
+    snapResolution,
+    updateClip,
+    moveClipToTrack,
+    setClipDragPreview,
+    openExtendConfirmDialog,
+    track.id,
+    track.color,
+    getDragMode,
+  ]);
 
   const handleClick = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
@@ -200,16 +255,21 @@ export function ClipBlock({ clip, track }: ClipBlockProps) {
 
   const audioDuration = clip.audioDuration ?? clip.duration;
   const audioOffset = clip.audioOffset ?? 0;
-  const peakWidthPx = width - 4;
+  const innerClipWidthPx = Math.max(width - 4, 0);
+  const availableAudioDuration = Math.max(0, audioDuration - audioOffset);
+  const renderedWaveDuration = Math.max(0, Math.min(clip.duration, availableAudioDuration));
+  const waveformRatio = clip.duration > 0 ? (renderedWaveDuration / clip.duration) : 0;
+  const waveformWidthPx = innerClipWidthPx * waveformRatio;
+  const extensionWidthPx = Math.max(0, innerClipWidthPx - waveformWidthPx);
 
-  const startPeakIdx = peaks ? Math.floor((audioOffset / audioDuration) * peaks.length) : 0;
-  const endPeakIdx = peaks ? Math.min(
-    Math.ceil(((audioOffset + clip.duration) / audioDuration) * peaks.length),
+  const startPeakIdx = peaks && audioDuration > 0 ? Math.floor((audioOffset / audioDuration) * peaks.length) : 0;
+  const endPeakIdx = peaks && audioDuration > 0 ? Math.min(
+    Math.ceil(((audioOffset + renderedWaveDuration) / audioDuration) * peaks.length),
     peaks.length,
   ) : 0;
   const visiblePeakCount = endPeakIdx - startPeakIdx;
-  const numBars = peaks ? Math.min(visiblePeakCount, Math.floor(peakWidthPx / 2)) : 0;
-  const barSpacing = numBars > 0 ? peakWidthPx / numBars : 0;
+  const numBars = peaks ? Math.min(visiblePeakCount, Math.floor(waveformWidthPx / 2)) : 0;
+  const barSpacing = numBars > 0 ? waveformWidthPx / numBars : 0;
 
   return (
     <>
@@ -237,31 +297,39 @@ export function ClipBlock({ clip, track }: ClipBlockProps) {
         <div className="absolute top-0 bottom-0 right-0 w-[6px] cursor-col-resize z-10" />
 
         {/* Waveform */}
-        {peaks && numBars > 0 && (
-          <div className="absolute inset-0 flex items-center overflow-hidden">
-            <svg
-              width={peakWidthPx}
-              height="100%"
-              viewBox={`0 0 ${peakWidthPx} 100`}
-              preserveAspectRatio="none"
-              className="opacity-50 ml-0.5"
-            >
-              {Array.from({ length: numBars }, (_, i) => {
-                const peakIdx = startPeakIdx + Math.floor((i / numBars) * visiblePeakCount);
-                const peak = peaks[Math.min(peakIdx, peaks.length - 1)];
-                const h = peak * 80;
-                return (
-                  <rect
-                    key={i}
-                    x={i * barSpacing}
-                    y={50 - h / 2}
-                    width={Math.max(barSpacing * 0.7, 0.5)}
-                    height={Math.max(h, 1)}
-                    fill={track.color}
-                  />
-                );
-              })}
-            </svg>
+        {(clip.generationStatus === 'ready' || clip.generationStatus === 'stale') && peaks && (numBars > 0 || extensionWidthPx > 1) && (
+          <div className="absolute inset-0 overflow-hidden">
+            {numBars > 0 && (
+              <svg
+                width={waveformWidthPx}
+                height="100%"
+                viewBox={`0 0 ${waveformWidthPx} 100`}
+                preserveAspectRatio="none"
+                className="opacity-50 ml-0.5"
+              >
+                {Array.from({ length: numBars }, (_, i) => {
+                  const peakIdx = startPeakIdx + Math.floor((i / numBars) * visiblePeakCount);
+                  const peak = peaks[Math.min(peakIdx, peaks.length - 1)];
+                  const h = peak * 80;
+                  return (
+                    <rect
+                      key={i}
+                      x={i * barSpacing}
+                      y={50 - h / 2}
+                      width={Math.max(barSpacing * 0.7, 0.5)}
+                      height={Math.max(h, 1)}
+                      fill={track.color}
+                    />
+                  );
+                })}
+              </svg>
+            )}
+            {extensionWidthPx > 1 && (
+              <div
+                className="absolute top-0 bottom-0 bg-black/20 border-l border-white/10"
+                style={{ left: waveformWidthPx + 0.5, width: extensionWidthPx }}
+              />
+            )}
           </div>
         )}
 
