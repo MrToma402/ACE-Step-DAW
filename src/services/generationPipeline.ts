@@ -213,11 +213,19 @@ async function generateClipInternal(
       // Poll for completion
       const startTime = Date.now();
       let resultAudioPath: string | null = null;
+      let lastPollError: string | null = null;
 
       while (Date.now() - startTime < MAX_POLL_DURATION_MS) {
         await sleep(POLL_INTERVAL_MS);
 
-        const entries = await api.queryResult([taskId]);
+        let entries;
+        try {
+          entries = await api.queryResult([taskId]);
+          lastPollError = null;
+        } catch (error) {
+          lastPollError = error instanceof Error ? error.message : 'query_result failed';
+          continue;
+        }
         const entry = entries?.[0];
         if (!entry) continue;
 
@@ -236,7 +244,7 @@ async function generateClipInternal(
       }
 
       if (!resultAudioPath) {
-        throw new Error('Generation timed out');
+        throw new Error(lastPollError ? `Generation timed out (${lastPollError})` : 'Generation timed out');
       }
 
       // Download audio

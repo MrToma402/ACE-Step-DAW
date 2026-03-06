@@ -6,7 +6,25 @@ import type {
   ModelsListResponse,
   StatsResponse,
 } from '../types/api';
-import { apiFetch, buildApiUrl } from './apiClient';
+import { apiFetch, buildApiUrl, withApiHeaders } from './apiClient';
+
+const QUERY_TIMEOUT_MS = 15000;
+const DOWNLOAD_TIMEOUT_MS = 120000;
+const DOWNLOAD_RETRIES = 3;
+
+async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 export async function healthCheck(): Promise<boolean> {
   try {
@@ -61,11 +79,19 @@ export async function releaseLegoTask(
 }
 
 export async function queryResult(taskIds: string[]): Promise<TaskResultEntry[]> {
-  const res = await apiFetch('/query_result', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ task_id_list: taskIds }),
-  });
+  let res: Response;
+  try {
+    res = await fetchWithTimeout(buildApiUrl('/query_result'), {
+      method: 'POST',
+      headers: withApiHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ task_id_list: taskIds }),
+    }, QUERY_TIMEOUT_MS);
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw new Error('queryResult timed out');
+    }
+    throw error;
+  }
 
   if (!res.ok) throw new Error(`queryResult failed: ${res.status}`);
   const envelope: ApiEnvelope<TaskResultEntry[]> = await res.json();
@@ -83,7 +109,29 @@ export async function downloadAudio(audioPath: string): Promise<Blob> {
   } else {
     url = buildApiUrl(`/v1/audio?path=${encodeURIComponent(audioPath)}`);
   }
-  const res = await apiFetch(url);
-  if (!res.ok) throw new Error(`downloadAudio failed: ${res.status} ${res.statusText}`);
-  return res.blob();
+  let lastError: unknown = null;
+
+  for (let attempt = 1; attempt <= DOWNLOAD_RETRIES; attempt++) {
+    try {
+      const res = await fetchWithTimeout(url, {
+        method: 'GET',
+        headers: withApiHeaders(),
+      }, DOWNLOAD_TIMEOUT_MS);
+      if (!res.ok) {
+        throw new Error(`downloadAudio failed: ${res.status} ${res.statusText}`);
+      }
+      return await res.blob();
+    } catch (error) {
+      lastError = error;
+      if (attempt < DOWNLOAD_RETRIES) {
+        await sleep(500 * attempt);
+        continue;
+      }
+    }
+  }
+
+  if (lastError instanceof DOMException && lastError.name === 'AbortError') {
+    throw new Error('downloadAudio timed out');
+  }
+  throw lastError instanceof Error ? lastError : new Error('downloadAudio failed');
 }

@@ -96,10 +96,18 @@ async function startGeneration(body: Record<string, unknown>): Promise<string> {
 
 async function pollTaskItems(taskId: string): Promise<TaskResultItem[]> {
   const start = Date.now();
+  let lastPollError: string | null = null;
 
   while (Date.now() - start < MAX_WAIT_MS) {
     await sleep(POLL_INTERVAL_MS);
-    const entries = await queryResult([taskId]);
+    let entries;
+    try {
+      entries = await queryResult([taskId]);
+      lastPollError = null;
+    } catch (error) {
+      lastPollError = error instanceof Error ? error.message : 'query_result failed';
+      continue;
+    }
     const entry = entries?.[0];
     if (!entry) continue;
 
@@ -115,7 +123,7 @@ async function pollTaskItems(taskId: string): Promise<TaskResultItem[]> {
     }
   }
 
-  throw new Error('Generation timed out.');
+  throw new Error(lastPollError ? `Generation timed out (${lastPollError}).` : 'Generation timed out.');
 }
 
 async function taskItemsToResults(items: TaskResultItem[]): Promise<ModalGenerationResult[]> {
@@ -191,4 +199,3 @@ export async function listLoras(): Promise<LoraInfo[]> {
     return [];
   }
 }
-

@@ -1,4 +1,4 @@
-import { useCallback, useRef, type MouseEvent } from 'react';
+import { memo, useCallback, useMemo, useRef, type MouseEvent } from 'react';
 import { useProjectStore } from '../../store/projectStore';
 import { useUIStore } from '../../store/uiStore';
 import { useArrangementStore } from '../../store/arrangementStore';
@@ -12,6 +12,65 @@ interface RulerMarker {
   label: string | null;
   major: boolean;
 }
+
+interface RulerMarkersLayerProps {
+  markers: RulerMarker[];
+}
+
+const RulerMarkersLayer = memo(function RulerMarkersLayer({ markers }: RulerMarkersLayerProps) {
+  return (
+    <>
+      {markers.map((marker) => (
+        <div
+          key={marker.key}
+          className="absolute top-0 h-full flex items-end pb-1.5 pointer-events-none"
+          style={{ left: marker.x }}
+        >
+          {marker.major ? (
+            <>
+              <div className="w-px h-3 bg-white/10 mr-1" />
+              <span className="text-[9px] font-bold text-slate-600">{marker.label}</span>
+            </>
+          ) : (
+            <div className="w-px h-1.5 bg-white/5" />
+          )}
+        </div>
+      ))}
+    </>
+  );
+});
+
+interface RulerPlayheadProps {
+  totalWidth: number;
+  pixelsPerSecond: number;
+  onMouseDown: (event: MouseEvent<HTMLButtonElement>) => void;
+}
+
+const RulerPlayhead = memo(function RulerPlayhead({
+  totalWidth,
+  pixelsPerSecond,
+  onMouseDown,
+}: RulerPlayheadProps) {
+  const currentTime = useTransportStore((s) => s.currentTime);
+  const playheadX = Math.max(0, Math.min(currentTime * pixelsPerSecond, totalWidth));
+
+  return (
+    <>
+      <div className="absolute inset-y-0 pointer-events-none z-20" style={{ left: playheadX }}>
+        <div className="absolute inset-y-0 w-px -translate-x-1/2 bg-daw-accent" />
+      </div>
+      <button
+        type="button"
+        onMouseDown={onMouseDown}
+        className="absolute top-0 h-8 w-4 -translate-x-1/2 z-30 flex items-start justify-center cursor-ew-resize text-daw-accent"
+        style={{ left: playheadX }}
+        aria-label="Drag playhead"
+      >
+        <span className="material-symbols-outlined text-base leading-none">arrow_drop_down</span>
+      </button>
+    </>
+  );
+});
 
 function buildSecondMarkers(totalDuration: number, pixelsPerSecond: number): RulerMarker[] {
   const secondStep = totalDuration > 120 ? 5 : 1;
@@ -50,7 +109,6 @@ function buildBarBeatMarkers(
 export function TimeRuler() {
   const project = useProjectStore((s) => s.project);
   const pixelsPerSecond = useUIStore((s) => s.pixelsPerSecond);
-  const currentTime = useTransportStore((s) => s.currentTime);
   const workspace = useArrangementStore((s) =>
     project ? s.workspacesByProjectId[project.id] : undefined,
   );
@@ -91,10 +149,11 @@ export function TimeRuler() {
 
   const { totalDuration } = project;
   const totalWidth = totalDuration * pixelsPerSecond;
-  const playheadX = Math.max(0, Math.min(currentTime * pixelsPerSecond, totalWidth));
-  const markers = displayMode === 'seconds'
-    ? buildSecondMarkers(totalDuration, pixelsPerSecond)
-    : buildBarBeatMarkers(totalDuration, project.bpm, project.timeSignature, pixelsPerSecond);
+  const markers = useMemo(() => (
+    displayMode === 'seconds'
+      ? buildSecondMarkers(totalDuration, pixelsPerSecond)
+      : buildBarBeatMarkers(totalDuration, project.bpm, project.timeSignature, pixelsPerSecond)
+  ), [displayMode, totalDuration, pixelsPerSecond, project.bpm, project.timeSignature]);
 
   return (
     <div
@@ -103,34 +162,12 @@ export function TimeRuler() {
       style={{ width: totalWidth }}
       onClick={handleClick}
     >
-      {markers.map((marker) => (
-        <div
-          key={marker.key}
-          className="absolute top-0 h-full flex items-end pb-1.5 pointer-events-none"
-          style={{ left: marker.x }}
-        >
-          {marker.major ? (
-            <>
-              <div className="w-px h-3 bg-white/10 mr-1" />
-              <span className="text-[9px] font-bold text-slate-600">{marker.label}</span>
-            </>
-          ) : (
-            <div className="w-px h-1.5 bg-white/5" />
-          )}
-        </div>
-      ))}
-      <div className="absolute inset-y-0 pointer-events-none z-20" style={{ left: playheadX }}>
-        <div className="absolute inset-y-0 w-px -translate-x-1/2 bg-daw-accent" />
-      </div>
-      <button
-        type="button"
+      <RulerMarkersLayer markers={markers} />
+      <RulerPlayhead
+        totalWidth={totalWidth}
+        pixelsPerSecond={pixelsPerSecond}
         onMouseDown={handlePlayheadMouseDown}
-        className="absolute top-0 h-8 w-4 -translate-x-1/2 z-30 flex items-start justify-center cursor-ew-resize text-daw-accent"
-        style={{ left: playheadX }}
-        aria-label="Drag playhead"
-      >
-        <span className="material-symbols-outlined text-base leading-none">arrow_drop_down</span>
-      </button>
+      />
     </div>
   );
 }

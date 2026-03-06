@@ -1,14 +1,41 @@
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { useTransportStore } from '../store/transportStore';
 import { useProjectStore } from '../store/projectStore';
 import { useArrangementStore } from '../store/arrangementStore';
 import { getAudioEngine } from './useAudioEngine';
 import { loadAudioBlobByKey } from '../services/audioFileManager';
 import { isArrangementClipSelected } from '../features/arrangement/selection';
+import type { Project } from '../types/project';
+
+function getReadyClipTokens(project: Project): string[] {
+  const workspace = useArrangementStore.getState().workspacesByProjectId[project.id] ?? null;
+  const tokens: string[] = [];
+
+  for (const track of project.tracks) {
+    for (const clip of track.clips) {
+      if (!isArrangementClipSelected(clip, workspace)) continue;
+      if (clip.generationStatus !== 'ready' || !clip.isolatedAudioKey) continue;
+      tokens.push([
+        track.id,
+        clip.id,
+        clip.isolatedAudioKey,
+        clip.startTime.toFixed(4),
+        clip.duration.toFixed(4),
+        (clip.audioOffset ?? 0).toFixed(4),
+      ].join(':'));
+    }
+  }
+
+  tokens.sort();
+  return tokens;
+}
 
 export function useTransport() {
   const isPlaying = useTransportStore((s) => s.isPlaying);
   const project = useProjectStore((s) => s.project);
+  const lastReadyClipsRef = useRef<Set<string> | null>(null);
+  const rescheduleTimerRef = useRef<number | null>(null);
+  const rescheduleInFlightRef = useRef(false);
 
   const play = useCallback(async (fromTime?: number) => {
     const engine = getAudioEngine();
@@ -137,6 +164,58 @@ export function useTransport() {
     }
     engine.updateSoloState();
   }, [project, isPlaying]);
+
+  // While transport is running, newly generated audio should join playback immediately.
+  useEffect(() => {
+    if (!project || !isPlaying) {
+      lastReadyClipsRef.current = null;
+      rescheduleInFlightRef.current = false;
+      if (rescheduleTimerRef.current !== null) {
+        window.clearTimeout(rescheduleTimerRef.current);
+        rescheduleTimerRef.current = null;
+      }
+      return;
+    }
+
+    const nextReadyClips = new Set(getReadyClipTokens(project));
+    const prevReadyClips = lastReadyClipsRef.current;
+
+    if (prevReadyClips === null) {
+      lastReadyClipsRef.current = nextReadyClips;
+      return;
+    }
+
+    let hasNewReadyClip = false;
+    for (const token of nextReadyClips) {
+      if (!prevReadyClips.has(token)) {
+        hasNewReadyClip = true;
+        break;
+      }
+    }
+    lastReadyClipsRef.current = nextReadyClips;
+    if (!hasNewReadyClip || rescheduleInFlightRef.current) return;
+
+    if (rescheduleTimerRef.current !== null) {
+      window.clearTimeout(rescheduleTimerRef.current);
+    }
+    rescheduleTimerRef.current = window.setTimeout(() => {
+      rescheduleTimerRef.current = null;
+      if (!useTransportStore.getState().isPlaying) return;
+      rescheduleInFlightRef.current = true;
+      // Do not stop immediately. Let current audio continue while we load/decode
+      // new ready clips, then play() will swap scheduling at current playhead.
+      void play().finally(() => {
+        rescheduleInFlightRef.current = false;
+      });
+    }, 120);
+
+    return () => {
+      if (rescheduleTimerRef.current !== null) {
+        window.clearTimeout(rescheduleTimerRef.current);
+        rescheduleTimerRef.current = null;
+      }
+    };
+  }, [project, isPlaying, play]);
 
   return { isPlaying, play, pause, stop, seek };
 }
