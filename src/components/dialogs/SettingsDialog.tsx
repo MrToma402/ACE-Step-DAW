@@ -98,7 +98,15 @@ export function SettingsDialog() {
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs text-zinc-400 mb-1">Inference Steps</label>
+              <label className="flex items-center gap-1 text-xs text-zinc-400 mb-1">
+                <span>Inference Steps</span>
+                <span
+                  className="text-zinc-500 cursor-help"
+                  title="How many denoising steps to run. More steps are slower and can improve stability."
+                >
+                  ⓘ
+                </span>
+              </label>
               <input
                 type="number"
                 value={steps}
@@ -109,7 +117,15 @@ export function SettingsDialog() {
               />
             </div>
             <div>
-              <label className="block text-xs text-zinc-400 mb-1">Guidance Scale</label>
+              <label className="flex items-center gap-1 text-xs text-zinc-400 mb-1">
+                <span>Guidance Scale</span>
+                <span
+                  className="text-zinc-500 cursor-help"
+                  title="How strongly generation follows your conditioning. Higher values can sound forced or artifacty."
+                >
+                  ⓘ
+                </span>
+              </label>
               <input
                 type="number"
                 value={guidance}
@@ -124,7 +140,15 @@ export function SettingsDialog() {
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs text-zinc-400 mb-1">Shift</label>
+              <label className="flex items-center gap-1 text-xs text-zinc-400 mb-1">
+                <span>Shift</span>
+                <span
+                  className="text-zinc-500 cursor-help"
+                  title="Sampling schedule offset. Changes character and clarity; keep near default unless A/B testing."
+                >
+                  ⓘ
+                </span>
+              </label>
               <input
                 type="number"
                 value={shift}
