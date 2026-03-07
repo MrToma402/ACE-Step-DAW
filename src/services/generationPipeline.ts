@@ -290,6 +290,11 @@ async function generateClipInternal(
       model: project.generationDefaults.model || undefined,
     } as LegoTaskParams;
 
+    const lockedSeed = clip.lockedSeed?.trim();
+    if (lockedSeed) {
+      params.seed = lockedSeed;
+    }
+
     // Sample mode: send prompt as sample_query
     if (clip.sampleMode) {
       params.sample_mode = true;

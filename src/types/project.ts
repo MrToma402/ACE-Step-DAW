@@ -36,6 +36,7 @@ export interface Clip {
   keyScale?: string | 'auto' | null;
   timeSignature?: number | 'auto' | null;
   inferredMetas?: InferredMetas;
+  lockedSeed?: string | null;
   sampleMode?: boolean;
   autoExpandPrompt?: boolean;
   // Crop support: original audio duration and offset into it

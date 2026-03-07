@@ -49,6 +49,7 @@ export interface BaseTaskParams {
   // Advanced DiT params
   use_adg?: boolean;            // Adaptive Dual Guidance (Base model only)
   infer_method?: 'ode' | 'sde'; // ode=deterministic, sde=more random
+  seed?: string | number;       // Optional fixed seed for reproducible generation
 }
 
 /** Lego (multi-track) task - used by DAW timeline */

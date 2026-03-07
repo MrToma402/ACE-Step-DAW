@@ -22,6 +22,7 @@ export function ClipPromptEditor() {
   const [endTime, setEndTime] = useState(0);
   const [sampleMode, setSampleMode] = useState(false);
   const [autoExpandPrompt, setAutoExpandPrompt] = useState(true);
+  const [lockedSeed, setLockedSeed] = useState<string | null>(null);
   // 'auto' = ACE-Step infers, null = use project default, number = manual override
   const [overrideBpm, setOverrideBpm] = useState<number | 'auto' | null>(null);
   const [overrideKey, setOverrideKey] = useState<string | 'auto' | null>(null);
@@ -36,6 +37,7 @@ export function ClipPromptEditor() {
       setEndTime(normalizeSeconds(clip.startTime + clip.duration, 3));
       setSampleMode(clip.sampleMode ?? false);
       setAutoExpandPrompt(clip.autoExpandPrompt ?? true);
+      setLockedSeed(clip.lockedSeed ?? null);
       setOverrideBpm(clip.bpm === undefined ? null : clip.bpm);
       setOverrideKey(clip.keyScale === undefined ? null : clip.keyScale);
       setOverrideTimeSig(clip.timeSignature === undefined ? null : clip.timeSignature);
@@ -59,6 +61,7 @@ export function ClipPromptEditor() {
       timeSignature: overrideTimeSig,
       sampleMode,
       autoExpandPrompt,
+      lockedSeed,
     });
     setEditingClip(null);
   };
@@ -74,6 +77,7 @@ export function ClipPromptEditor() {
       timeSignature: overrideTimeSig,
       sampleMode,
       autoExpandPrompt,
+      lockedSeed,
     });
     setEditingClip(null);
     generateClip(editingClipId);
@@ -82,6 +86,20 @@ export function ClipPromptEditor() {
   const handleDelete = () => {
     removeClip(editingClipId);
     setEditingClip(null);
+  };
+
+  const latestSeed = clip.inferredMetas?.seed?.trim() || null;
+  const displayedSeed = lockedSeed || latestSeed;
+  const seedIsLocked = Boolean(lockedSeed);
+
+  const toggleSeedLock = () => {
+    if (seedIsLocked) {
+      setLockedSeed(null);
+      return;
+    }
+    if (latestSeed) {
+      setLockedSeed(latestSeed);
+    }
   };
 
   return (
@@ -298,10 +316,25 @@ export function ClipPromptEditor() {
                     <p className="text-xs text-zinc-300 truncate">{clip.inferredMetas.genres}</p>
                   </div>
                 )}
-                {clip.inferredMetas.seed && (
+                {displayedSeed && (
                   <div>
                     <span className="text-[10px] text-zinc-500">Seed</span>
-                    <p className="text-xs text-zinc-300 truncate">{clip.inferredMetas.seed}</p>
+                    <div className="flex items-center gap-1">
+                      <p className="text-xs text-zinc-300 truncate">{displayedSeed}</p>
+                      <button
+                        type="button"
+                        onClick={toggleSeedLock}
+                        title="Lock seed to keep the same random seed when regenerating, so you can compare other parameter changes."
+                        aria-label={seedIsLocked ? 'Unlock seed' : 'Lock seed'}
+                        className={`h-5 w-5 rounded border text-[11px] leading-none transition-colors ${
+                          seedIsLocked
+                            ? 'border-daw-accent bg-daw-accent/20 text-daw-accent'
+                            : 'border-daw-border text-zinc-300 hover:border-zinc-500'
+                        }`}
+                      >
+                        {seedIsLocked ? '🔒' : '🔓'}
+                      </button>
+                    </div>
                   </div>
                 )}
               </div>
