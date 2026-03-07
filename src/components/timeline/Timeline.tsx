@@ -53,8 +53,10 @@ export function Timeline() {
         onWheel={handleWheel}
       >
         <div className="relative" style={{ width: totalWidth, minWidth: '100%' }}>
-          <TimeRuler />
-          <SectionTimelineStrip />
+          <div className="sticky top-0 z-40">
+            <TimeRuler />
+            <SectionTimelineStrip />
+          </div>
 
           <div className="relative">
             <GridOverlay />
