@@ -14,6 +14,7 @@ import { computeWaveformPeaks } from '../utils/waveformPeaks';
 import { POLL_INTERVAL_MS, MAX_POLL_DURATION_MS } from '../constants/defaults';
 import { buildLegoPromptContent } from './legoPromptBuilder';
 import { buildRegenerationContextMix } from './regenerationContext';
+import { buildTrackGenerationTextInputs } from '../features/generation/trackLyricsPolicy';
 
 const EDGE_FADE_SECONDS = 0.005;
 const TARGET_ISOLATED_PEAK = 0.98;
@@ -265,13 +266,18 @@ async function generateClipInternal(
       keyScale: resolvedKey,
       timeSignature: resolvedTimeSig,
     });
+    const generationTextInputs = buildTrackGenerationTextInputs(
+      track.trackName,
+      clip.lyrics,
+      legoPrompt.instruction,
+    );
 
     const params: LegoTaskParams = {
       task_type: 'lego',
       track_name: track.trackName,
       prompt: legoPrompt.prompt,
-      lyrics: clip.lyrics || '',
-      instruction: legoPrompt.instruction,
+      lyrics: generationTextInputs.lyrics,
+      instruction: generationTextInputs.instruction,
       repainting_start: clip.startTime,
       repainting_end: clip.startTime + clip.duration,
       audio_duration: project.totalDuration,
