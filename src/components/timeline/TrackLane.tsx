@@ -1,13 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import type { Track } from '../../types/project';
 import { useUIStore } from '../../store/uiStore';
 import { useProjectStore } from '../../store/projectStore';
 import { useArrangementStore } from '../../store/arrangementStore';
-import { useGenerationStore } from '../../store/generationStore';
 import { useTimelineInteraction } from '../../hooks/useTimelineInteraction';
 import { ClipBlock } from './ClipBlock';
 import { isArrangementClipSelected } from '../../features/arrangement/selection';
-import { buildTrackGenerationStatus } from '../../features/generation/trackGenerationStatus';
 
 interface TrackLaneProps {
   track: Track;
@@ -16,21 +14,15 @@ interface TrackLaneProps {
 export function TrackLane({ track }: TrackLaneProps) {
   const pixelsPerSecond = useUIStore((s) => s.pixelsPerSecond);
   const clipDragPreview = useUIStore((s) => s.clipDragPreview);
-  const generationJobs = useGenerationStore((s) => s.jobs);
   const project = useProjectStore((s) => s.project);
   const workspace = useArrangementStore((s) =>
     project ? s.workspacesByProjectId[project.id] ?? null : null,
   );
   const { handleLaneClick, handleLaneDragSelection } = useTimelineInteraction();
   const [dragRange, setDragRange] = useState<{ startX: number; endX: number } | null>(null);
-  const [nowMs, setNowMs] = useState(() => Date.now());
   const dragMovedRef = useRef(false);
   const totalWidth = project ? project.totalDuration * pixelsPerSecond : 0;
   const isDropTarget = clipDragPreview?.hoverTrackId === track.id;
-  const trackStatus = useMemo(
-    () => buildTrackGenerationStatus(generationJobs, track.clips.map((clip) => clip.id), nowMs),
-    [generationJobs, nowMs, track.clips],
-  );
 
   const onMouseDown = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     if (e.button !== 0 || e.target !== e.currentTarget) return;
@@ -72,16 +64,6 @@ export function TrackLane({ track }: TrackLaneProps) {
       ? track.clips.filter((clip) => isArrangementClipSelected(clip, workspace))
       : track.clips;
 
-  useEffect(() => {
-    if (!trackStatus) return;
-    const intervalId = window.setInterval(() => {
-      setNowMs(Date.now());
-    }, 1000);
-    return () => {
-      window.clearInterval(intervalId);
-    };
-  }, [!!trackStatus]);
-
   if (!project) return null;
 
   return (
@@ -114,21 +96,6 @@ export function TrackLane({ track }: TrackLaneProps) {
       {visibleClips.map((clip) => (
         <ClipBlock key={clip.id} clip={clip} track={track} />
       ))}
-      {trackStatus && (
-        <div className="absolute left-1.5 bottom-1 z-40 pointer-events-none">
-          <div
-            className={`px-1.5 py-0.5 rounded border text-[9px] uppercase tracking-[0.08em] font-semibold ${
-              trackStatus.emphasis === 'queued'
-                ? 'bg-slate-900/80 border-slate-500/40 text-slate-200'
-                : trackStatus.emphasis === 'processing'
-                  ? 'bg-emerald-900/70 border-emerald-500/40 text-emerald-200'
-                  : 'bg-daw-accent/25 border-daw-accent/50 text-daw-accent'
-            }`}
-          >
-            {trackStatus.message}
-          </div>
-        </div>
-      )}
     </div>
   );
 }

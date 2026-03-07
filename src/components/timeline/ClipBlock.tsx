@@ -1,12 +1,14 @@
-import { useRef, useCallback, useState } from 'react';
+import { useRef, useCallback, useState, useMemo, useEffect } from 'react';
 import type { Clip, Track } from '../../types/project';
 import { useUIStore } from '../../store/uiStore';
 import { useProjectStore } from '../../store/projectStore';
 import { useArrangementStore } from '../../store/arrangementStore';
+import { useGenerationStore } from '../../store/generationStore';
 import { useGeneration } from '../../hooks/useGeneration';
 import { hexToRgba } from '../../utils/color';
 import { snapTime } from '../../features/arrangement/snap';
 import { isArrangementClipSelected } from '../../features/arrangement/selection';
+import { estimateEtaSeconds, extractProgressPercent } from '../../features/generation/trackGenerationStatus';
 
 interface ClipBlockProps {
   clip: Clip;
@@ -31,6 +33,7 @@ export function ClipBlock({ clip, track }: ClipBlockProps) {
   const moveClipToTrack = useProjectStore((s) => s.moveClipToTrack);
   const removeClip = useProjectStore((s) => s.removeClip);
   const duplicateClip = useProjectStore((s) => s.duplicateClip);
+  const generationJobs = useGenerationStore((s) => s.jobs);
   const project = useProjectStore((s) => s.project);
   const workspace = useArrangementStore((s) =>
     project ? s.workspacesByProjectId[project.id] : undefined,
@@ -52,6 +55,7 @@ export function ClipBlock({ clip, track }: ClipBlockProps) {
   const dragRef = useRef(false);
 
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
+  const [nowMs, setNowMs] = useState(() => Date.now());
 
   const getDragMode = useCallback((e: React.MouseEvent): DragMode => {
     const rect = e.currentTarget.getBoundingClientRect();
@@ -270,6 +274,30 @@ export function ClipBlock({ clip, track }: ClipBlockProps) {
   const visiblePeakCount = endPeakIdx - startPeakIdx;
   const numBars = peaks ? Math.min(visiblePeakCount, Math.floor(waveformWidthPx / 2)) : 0;
   const barSpacing = numBars > 0 ? waveformWidthPx / numBars : 0;
+  const activeJob = useMemo(
+    () =>
+      generationJobs.find((job) => (
+        job.clipId === clip.id
+        && (job.status === 'queued' || job.status === 'generating' || job.status === 'processing')
+      )) ?? null,
+    [clip.id, generationJobs],
+  );
+  const compactStatusLabel = useMemo(() => {
+    if (!activeJob) return null;
+    if (activeJob.status === 'queued') return 'Queued';
+    if (activeJob.status === 'processing') return 'Processing';
+    const progressPct = extractProgressPercent(activeJob.progress);
+    if (progressPct === null) return 'Generating';
+    const etaSeconds = estimateEtaSeconds(activeJob.startedAt, progressPct, nowMs);
+    if (etaSeconds === null) return `${Math.round(progressPct)}%`;
+    return `${Math.round(progressPct)}% · ~${String(Math.floor(etaSeconds / 60)).padStart(2, '0')}:${String(etaSeconds % 60).padStart(2, '0')}`;
+  }, [activeJob, nowMs]);
+
+  useEffect(() => {
+    if (!activeJob) return;
+    const intervalId = window.setInterval(() => setNowMs(Date.now()), 1000);
+    return () => window.clearInterval(intervalId);
+  }, [activeJob?.id]);
 
   return (
     <>
@@ -351,7 +379,24 @@ export function ClipBlock({ clip, track }: ClipBlockProps) {
         {/* Status indicator */}
         {clip.generationStatus === 'generating' && (
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none bg-black/20">
-            <div className="w-4 h-4 border-2 border-daw-accent border-t-transparent rounded-full animate-spin" />
+            <div className="flex flex-col items-center gap-1">
+              <div className="w-4 h-4 border-2 border-daw-accent border-t-transparent rounded-full animate-spin" />
+              {compactStatusLabel && (
+                <div className="text-[8px] font-semibold text-daw-accent/95 whitespace-nowrap px-1 py-0.5 rounded bg-black/45 border border-daw-accent/30">
+                  {compactStatusLabel}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+        {clip.generationStatus === 'queued' && compactStatusLabel && (
+          <div className="absolute bottom-1 left-2 text-[8px] text-slate-300 truncate pointer-events-none">
+            {compactStatusLabel}
+          </div>
+        )}
+        {clip.generationStatus === 'processing' && compactStatusLabel && (
+          <div className="absolute bottom-1 left-2 text-[8px] text-emerald-300 truncate pointer-events-none">
+            {compactStatusLabel}
           </div>
         )}
         {clip.generationStatus === 'error' && (
