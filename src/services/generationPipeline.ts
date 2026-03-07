@@ -21,6 +21,13 @@ interface PreviousContext {
 
 const EDGE_FADE_SECONDS = 0.005;
 const TARGET_ISOLATED_PEAK = 0.98;
+const WAVE_SUBTRACTION_ALPHA = 0.95;
+const WAVE_SUBTRACTION_GAIN_MATCH = true;
+const WAVE_SUBTRACTION_MIN_GAIN = 0.5;
+const WAVE_SUBTRACTION_MAX_GAIN = 2.0;
+const WAVE_SUBTRACTION_ADAPTIVE_ALPHA = true;
+const WAVE_SUBTRACTION_ADAPTIVE_FLOOR = 0.85;
+const WAVE_SUBTRACTION_CORRELATION_STRIDE = 4;
 
 async function buildLegoSourceAudio(
   previousCumulativeBlob: Blob | null,
@@ -408,7 +415,15 @@ async function generateClipInternal(
       previousBuffer = await engine.decodeAudioData(srcAudioBlob);
     }
 
-    const fullIsolatedBuffer = isolateTrackAudio(engine.ctx, cumulativeBuffer, previousBuffer);
+    const fullIsolatedBuffer = isolateTrackAudio(engine.ctx, cumulativeBuffer, previousBuffer, {
+      alpha: WAVE_SUBTRACTION_ALPHA,
+      gainMatch: WAVE_SUBTRACTION_GAIN_MATCH,
+      minGainCompensation: WAVE_SUBTRACTION_MIN_GAIN,
+      maxGainCompensation: WAVE_SUBTRACTION_MAX_GAIN,
+      adaptiveAlpha: WAVE_SUBTRACTION_ADAPTIVE_ALPHA,
+      adaptiveAlphaFloor: WAVE_SUBTRACTION_ADAPTIVE_FLOOR,
+      correlationSampleStride: WAVE_SUBTRACTION_CORRELATION_STRIDE,
+    });
 
     // Re-read clip from store in case the user moved/resized it during generation
     const currentClip = useProjectStore.getState().getClipById(clipId);
