@@ -1,5 +1,6 @@
 import type { SongSection } from '../../features/arrangement/types';
 import type { ContinuityBoundaryMeter } from './continuityWarnings';
+import { getSectionColorTone } from '../../features/arrangement/sectionColors';
 
 interface ArrangementRulerProps {
   totalDuration: number;
@@ -11,12 +12,12 @@ interface ArrangementRulerProps {
   boundaryMeters?: ContinuityBoundaryMeter[];
 }
 
-function sectionStatusClass(status: SongSection['status']): string {
-  if (status === 'running') return 'bg-daw-accent/10 border-daw-accent/50';
-  if (status === 'succeeded') return 'bg-emerald-900/20 border-emerald-500/40';
-  if (status === 'failed') return 'bg-red-900/20 border-red-500/40';
-  if (status === 'canceled') return 'bg-zinc-800 border-zinc-600';
-  return 'bg-black/20 border-daw-border';
+function sectionStatusBorderClass(status: SongSection['status']): string {
+  if (status === 'running') return 'border-daw-accent/70';
+  if (status === 'succeeded') return 'border-emerald-500/70';
+  if (status === 'failed') return 'border-red-500/70';
+  if (status === 'canceled') return 'border-zinc-500';
+  return '';
 }
 
 export function ArrangementRuler({
@@ -52,6 +53,7 @@ export function ArrangementRuler({
           const sectionDuration = Math.max(0.1, section.endTime - section.startTime);
           const widthPercent = (sectionDuration / Math.max(1, totalDuration)) * 100;
           const selected = selectedSectionId === section.id;
+          const tone = getSectionColorTone(section.id);
           const boundary = boundaryBySectionId[section.id] ?? null;
           const boundaryClass =
             boundary?.level === 'high'
@@ -68,13 +70,17 @@ export function ArrangementRuler({
               style={{ width: `${widthPercent}%` }}
               className={`relative h-full px-2 text-left border-r border-black/40 transition-colors ${
                 selected ? 'ring-1 ring-daw-accent z-10' : ''
-              } ${sectionStatusClass(section.status)}`}
+              } ${sectionStatusBorderClass(section.status)}`}
             >
-              <div className="text-[10px] font-semibold text-slate-200 truncate">{section.name}</div>
+              <div
+                className="absolute inset-0 pointer-events-none"
+                style={{ backgroundColor: tone.fill }}
+              />
+              <div className="relative text-[10px] font-semibold truncate" style={{ color: tone.label }}>{section.name}</div>
               {!compact && (
                 <>
-                  <div className="text-[9px] text-slate-500 mt-0.5 truncate">{section.kind.replace('_', ' ')}</div>
-                  <div className="text-[9px] text-slate-600 mt-0.5">
+                  <div className="relative text-[9px] text-slate-300/90 mt-0.5 truncate">{section.kind.replace('_', ' ')}</div>
+                  <div className="relative text-[9px] text-slate-400 mt-0.5">
                     {section.startTime.toFixed(1)}s - {section.endTime.toFixed(1)}s
                   </div>
                 </>
