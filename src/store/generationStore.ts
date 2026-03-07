@@ -6,6 +6,8 @@ export interface GenerationJob {
   trackName: string;
   status: 'queued' | 'generating' | 'processing' | 'done' | 'error';
   progress: string;
+  startedAt: number;
+  updatedAt: number;
   error?: string;
 }
 
@@ -28,7 +30,7 @@ export const useGenerationStore = create<GenerationState>((set) => ({
 
   updateJob: (jobId, updates) =>
     set((s) => ({
-      jobs: s.jobs.map((j) => (j.id === jobId ? { ...j, ...updates } : j)),
+      jobs: s.jobs.map((j) => (j.id === jobId ? { ...j, ...updates, updatedAt: Date.now() } : j)),
     })),
 
   removeJob: (jobId) =>

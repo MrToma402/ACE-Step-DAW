@@ -11,6 +11,11 @@ interface ApiEnvelope<T> {
   error: string | null;
 }
 
+interface ModalProgressUpdate {
+  status: number;
+  progressText: string;
+}
+
 export interface ModalGenerationResult {
   audioBlob: Blob;
   metas: TaskResultItem['metas'];
@@ -94,7 +99,10 @@ async function startGeneration(body: Record<string, unknown>): Promise<string> {
   return taskId;
 }
 
-async function pollTaskItems(taskId: string): Promise<TaskResultItem[]> {
+async function pollTaskItems(
+  taskId: string,
+  onProgress?: (update: ModalProgressUpdate) => void,
+): Promise<TaskResultItem[]> {
   const start = Date.now();
   let lastPollError: string | null = null;
 
@@ -110,6 +118,7 @@ async function pollTaskItems(taskId: string): Promise<TaskResultItem[]> {
     }
     const entry = entries?.[0];
     if (!entry) continue;
+    onProgress?.({ status: entry.status, progressText: entry.progress_text || 'Generating...' });
 
     if (entry.status === 1) {
       const items = parseTaskResultItems(entry.result);
@@ -147,10 +156,11 @@ async function taskItemsToResults(items: TaskResultItem[]): Promise<ModalGenerat
 export async function generateViaModal(
   srcAudioBlob: Blob | null,
   params: AnyTaskParams | LegoTaskParams,
+  onProgress?: (update: ModalProgressUpdate) => void,
 ): Promise<ModalGenerationResult> {
   const body = await buildGenerationBody(srcAudioBlob, params);
   const taskId = await startGeneration(body);
-  const items = await pollTaskItems(taskId);
+  const items = await pollTaskItems(taskId, onProgress);
   const results = await taskItemsToResults(items);
   return results[0];
 }
@@ -158,10 +168,11 @@ export async function generateViaModal(
 export async function generateBatchViaModal(
   srcAudioBlob: Blob | null,
   params: AnyTaskParams,
+  onProgress?: (update: ModalProgressUpdate) => void,
 ): Promise<ModalGenerationResult[]> {
   const body = await buildGenerationBody(srcAudioBlob, params);
   const taskId = await startGeneration(body);
-  const items = await pollTaskItems(taskId);
+  const items = await pollTaskItems(taskId, onProgress);
   return taskItemsToResults(items);
 }
 

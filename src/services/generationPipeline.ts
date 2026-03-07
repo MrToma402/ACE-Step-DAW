@@ -273,12 +273,15 @@ async function generateClipInternal(
 
   // Create generation job
   const jobId = uuidv4();
+  const now = Date.now();
   genStore.addJob({
     id: jobId,
     clipId,
     trackName: track.trackName,
     status: 'queued',
     progress: 'Queued',
+    startedAt: now,
+    updatedAt: now,
   });
 
   store.updateClipStatus(clipId, 'queued', { generationJobId: jobId });
@@ -346,7 +349,12 @@ async function generateClipInternal(
       // ── Fast JSON submission path ──
       useGenerationStore.getState().updateJob(jobId, { progress: 'Generating (this may take a minute)...' });
 
-      const modalResult = await generateViaModal(srcAudioBlob, params);
+      const modalResult = await generateViaModal(srcAudioBlob, params, ({ progressText }) => {
+        useGenerationStore.getState().updateJob(jobId, {
+          status: 'generating',
+          progress: progressText || 'Generating...',
+        });
+      });
       cumulativeBlob = modalResult.audioBlob;
 
       // Build a pseudo TaskResultItem from direct API response
