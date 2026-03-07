@@ -1,5 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import type { SongSection } from '../features/arrangement/types';
+import type { Clip } from '../types/project';
 import { useGenerationStore } from '../store/generationStore';
 import { useArrangementStore } from '../store/arrangementStore';
 import { useProjectStore } from '../store/projectStore';
@@ -9,6 +10,11 @@ import { generateClipWithContext } from './generationPipeline';
 
 const runningSectionIds = new Set<string>();
 const canceledSectionIds = new Set<string>();
+
+interface SectionReferenceContext {
+  blob: Blob | null;
+  endTime: number | null;
+}
 
 function isVocalTrack(trackName: string): boolean {
   return trackName === 'vocals' || trackName === 'backing_vocals';
@@ -27,27 +33,41 @@ function getPreviousSection(projectId: string, section: SongSection): SongSectio
   return sorted[idx - 1];
 }
 
-async function getPreviousSectionReferenceBlob(
+async function getPreviousSectionReferenceContext(
   projectId: string,
   section: SongSection,
-): Promise<Blob | null> {
+): Promise<SectionReferenceContext> {
   const ws = useArrangementStore.getState().workspacesByProjectId[projectId];
-  if (!ws) return null;
+  if (!ws) return { blob: null, endTime: null };
   const prevSection = getPreviousSection(projectId, section);
-  if (!prevSection) return null;
+  if (!prevSection) return { blob: null, endTime: null };
   const selectedTakeId = ws.selectedTakeBySectionId[prevSection.id] ?? null;
-  if (!selectedTakeId) return null;
+  if (!selectedTakeId) return { blob: null, endTime: null };
   const take = (ws.takesBySectionId[prevSection.id] ?? []).find((item) => item.id === selectedTakeId);
-  if (!take) return null;
+  if (!take) return { blob: null, endTime: null };
 
   const projectStore = useProjectStore.getState();
-  for (let i = take.trackClipIds.length - 1; i >= 0; i -= 1) {
-    const clip = projectStore.getClipById(take.trackClipIds[i]);
+  let furthestClip: Clip | null = null;
+  for (const clipId of take.trackClipIds) {
+    const clip = projectStore.getClipById(clipId);
     if (!clip?.cumulativeMixKey) continue;
-    const blob = await loadAudioBlobByKey(clip.cumulativeMixKey);
-    if (blob) return blob;
+    if (!furthestClip) {
+      furthestClip = clip;
+      continue;
+    }
+    const currentEnd = clip.startTime + clip.duration;
+    const furthestEnd = furthestClip.startTime + furthestClip.duration;
+    if (currentEnd > furthestEnd) {
+      furthestClip = clip;
+    }
   }
-  return null;
+  if (!furthestClip?.cumulativeMixKey) {
+    return { blob: null, endTime: null };
+  }
+  return {
+    blob: await loadAudioBlobByKey(furthestClip.cumulativeMixKey) ?? null,
+    endTime: furthestClip.startTime + furthestClip.duration,
+  };
 }
 
 function isCanceled(sectionId: string): boolean {
@@ -93,7 +113,9 @@ export async function generateSection(sectionId: string): Promise<void> {
       if (isCanceled(section.id)) break;
       const takeId = uuidv4();
       const clipIds: string[] = [];
-      let previousBlob = await getPreviousSectionReferenceBlob(project.id, section);
+      const initialContext = await getPreviousSectionReferenceContext(project.id, section);
+      let previousBlob = initialContext.blob;
+      let previousContextEnd = initialContext.endTime;
       let failedMessage: string | null = null;
 
       for (const track of orderedTracks) {
@@ -128,7 +150,11 @@ export async function generateSection(sectionId: string): Promise<void> {
         clipIds.push(clip.id);
 
         try {
-          previousBlob = await generateClipWithContext(clip.id, previousBlob);
+          previousBlob = await generateClipWithContext(clip.id, previousBlob, previousContextEnd);
+          previousContextEnd = Math.max(
+            previousContextEnd ?? Number.NEGATIVE_INFINITY,
+            clip.startTime + clip.duration,
+          );
         } catch (error) {
           failedMessage = error instanceof Error ? error.message : 'Section generation failed';
           break;

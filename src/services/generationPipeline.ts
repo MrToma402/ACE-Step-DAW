@@ -19,6 +19,9 @@ interface PreviousContext {
   endTime: number | null;
 }
 
+const EDGE_FADE_SECONDS = 0.005;
+const TARGET_ISOLATED_PEAK = 0.98;
+
 async function buildLegoSourceAudio(
   previousCumulativeBlob: Blob | null,
   previousContextEnd: number | null,
@@ -56,6 +59,54 @@ async function buildLegoSourceAudio(
   return audioBufferToWavBlob(sanitized);
 }
 
+function getClipEndTime(clip: { startTime: number; duration: number }): number {
+  return clip.startTime + clip.duration;
+}
+
+function getBufferPeak(buffer: AudioBuffer): number {
+  let peak = 0;
+  for (let ch = 0; ch < buffer.numberOfChannels; ch++) {
+    const data = buffer.getChannelData(ch);
+    for (let i = 0; i < data.length; i++) {
+      const abs = Math.abs(data[i]);
+      if (abs > peak) peak = abs;
+    }
+  }
+  return peak;
+}
+
+function scaleBuffer(buffer: AudioBuffer, gain: number): void {
+  for (let ch = 0; ch < buffer.numberOfChannels; ch++) {
+    const data = buffer.getChannelData(ch);
+    for (let i = 0; i < data.length; i++) {
+      data[i] *= gain;
+    }
+  }
+}
+
+function limitBufferPeak(buffer: AudioBuffer, targetPeak: number): void {
+  const peak = getBufferPeak(buffer);
+  if (peak <= targetPeak || peak <= 0) return;
+  scaleBuffer(buffer, targetPeak / peak);
+}
+
+function applyEdgeFade(buffer: AudioBuffer, fadeSeconds: number): void {
+  const fadeSamples = Math.min(
+    Math.floor(fadeSeconds * buffer.sampleRate),
+    Math.floor(buffer.length / 2),
+  );
+  if (fadeSamples <= 0) return;
+
+  for (let ch = 0; ch < buffer.numberOfChannels; ch++) {
+    const data = buffer.getChannelData(ch);
+    for (let i = 0; i < fadeSamples; i++) {
+      const gain = i / fadeSamples;
+      data[i] *= gain;
+      data[data.length - 1 - i] *= gain;
+    }
+  }
+}
+
 /**
  * Generate all tracks sequentially (bottom → top in generation order).
  */
@@ -72,27 +123,42 @@ export async function generateAllTracks(): Promise<void> {
     let previousContextEnd: number | null = null;
 
     for (const track of tracks) {
-      for (const clip of track.clips) {
+      const orderedClips = [...track.clips].sort((a, b) => {
+        const startDelta = a.startTime - b.startTime;
+        if (Math.abs(startDelta) > 0.0001) return startDelta;
+        return getClipEndTime(a) - getClipEndTime(b);
+      });
+
+      for (const clip of orderedClips) {
         if (clip.generationStatus === 'ready') {
           // Already generated — use its cumulative mix as input for next track
           if (clip.cumulativeMixKey) {
             const blob = await loadAudioBlobByKey(clip.cumulativeMixKey);
             if (blob) {
-              previousCumulativeBlob = blob;
-              previousContextEnd = clip.startTime + clip.duration;
+              const clipEnd = getClipEndTime(clip);
+              if (previousContextEnd == null || clipEnd >= previousContextEnd - 0.0001) {
+                previousCumulativeBlob = blob;
+                previousContextEnd = clipEnd;
+              }
             }
           }
           continue;
         }
 
-        previousCumulativeBlob = await generateClipInternal(
+        const nextCumulativeBlob = await generateClipInternal(
           clip.id,
           previousCumulativeBlob,
           previousContextEnd,
         );
+        if (nextCumulativeBlob) {
+          previousCumulativeBlob = nextCumulativeBlob;
+        }
         const generatedClip = useProjectStore.getState().getClipById(clip.id);
         if (generatedClip?.generationStatus === 'ready') {
-          previousContextEnd = generatedClip.startTime + generatedClip.duration;
+          const generatedEnd = getClipEndTime(generatedClip);
+          if (previousContextEnd == null || generatedEnd > previousContextEnd) {
+            previousContextEnd = generatedEnd;
+          }
         }
       }
     }
@@ -121,8 +187,9 @@ export async function generateSingleClip(clipId: string): Promise<void> {
 export async function generateClipWithContext(
   clipId: string,
   previousCumulativeBlob: Blob | null,
+  previousContextEnd: number | null = null,
 ): Promise<Blob | null> {
-  const nextBlob = await generateClipInternal(clipId, previousCumulativeBlob);
+  const nextBlob = await generateClipInternal(clipId, previousCumulativeBlob, previousContextEnd);
   const clip = useProjectStore.getState().getClipById(clipId);
   if (!clip || clip.generationStatus !== 'ready') {
     throw new Error(clip?.errorMessage || 'Generation failed');
@@ -369,6 +436,10 @@ async function generateClipInternal(
         dst[i] = src[startSample + i];
       }
     }
+
+    // Keep isolated export clean: avoid hard clipping and edge clicks.
+    limitBufferPeak(trimmedBuffer, TARGET_ISOLATED_PEAK);
+    applyEdgeFade(trimmedBuffer, EDGE_FADE_SECONDS);
 
     const isolatedBlob = audioBufferToWavBlob(trimmedBuffer);
     const isolatedKey = await saveAudioBlob(project.id, clipId, 'isolated', isolatedBlob);

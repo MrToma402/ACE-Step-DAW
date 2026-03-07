@@ -98,6 +98,7 @@ export function useGeneration() {
 
     const sourceClip = getClipById(sourceClipId);
     const contextKey = sourceClip?.cumulativeMixKey ?? null;
+    const contextEnd = sourceClip ? sourceClip.startTime + sourceClip.duration : null;
     if (!contextKey) {
       await generateSingleClip(clipId);
       return;
@@ -111,7 +112,7 @@ export function useGeneration() {
 
     setIsGenerating(true);
     try {
-      await generateClipWithContext(clipId, contextBlob);
+      await generateClipWithContext(clipId, contextBlob, contextEnd);
     } finally {
       setIsGenerating(false);
     }
