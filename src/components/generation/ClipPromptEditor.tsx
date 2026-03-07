@@ -23,9 +23,9 @@ export function ClipPromptEditor() {
   const [sampleMode, setSampleMode] = useState(false);
   const [autoExpandPrompt, setAutoExpandPrompt] = useState(true);
   // 'auto' = ACE-Step infers, null = use project default, number = manual override
-  const [overrideBpm, setOverrideBpm] = useState<number | 'auto' | null>('auto');
-  const [overrideKey, setOverrideKey] = useState<string | 'auto' | null>('auto');
-  const [overrideTimeSig, setOverrideTimeSig] = useState<number | 'auto' | null>('auto');
+  const [overrideBpm, setOverrideBpm] = useState<number | 'auto' | null>(null);
+  const [overrideKey, setOverrideKey] = useState<string | 'auto' | null>(null);
+  const [overrideTimeSig, setOverrideTimeSig] = useState<number | 'auto' | null>(null);
 
   // Only reset form when switching to a different clip (not on every store update)
   useEffect(() => {
@@ -36,9 +36,9 @@ export function ClipPromptEditor() {
       setEndTime(normalizeSeconds(clip.startTime + clip.duration, 3));
       setSampleMode(clip.sampleMode ?? false);
       setAutoExpandPrompt(clip.autoExpandPrompt ?? true);
-      setOverrideBpm(clip.bpm === undefined ? 'auto' : clip.bpm);
-      setOverrideKey(clip.keyScale === undefined ? 'auto' : clip.keyScale);
-      setOverrideTimeSig(clip.timeSignature === undefined ? 'auto' : clip.timeSignature);
+      setOverrideBpm(clip.bpm === undefined ? null : clip.bpm);
+      setOverrideKey(clip.keyScale === undefined ? null : clip.keyScale);
+      setOverrideTimeSig(clip.timeSignature === undefined ? null : clip.timeSignature);
     }
   }, [editingClipId]);
 

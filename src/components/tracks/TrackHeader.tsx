@@ -1,4 +1,4 @@
-import { useRef, useState, type ChangeEvent } from 'react';
+import { useRef, useState, type ChangeEvent, type DragEvent } from 'react';
 import type { Track } from '../../types/project';
 import { useProjectStore } from '../../store/projectStore';
 import { useArrangementStore } from '../../store/arrangementStore';
@@ -10,9 +10,23 @@ import { isArrangementClipSelected } from '../../features/arrangement/selection'
 
 interface TrackHeaderProps {
   track: Track;
+  isDragging?: boolean;
+  isDropTarget?: boolean;
+  onDragStartTrack?: (trackId: string) => void;
+  onDragOverTrack?: (trackId: string) => void;
+  onDropTrack?: (trackId: string) => void;
+  onDragEndTrack?: () => void;
 }
 
-export function TrackHeader({ track }: TrackHeaderProps) {
+export function TrackHeader({
+  track,
+  isDragging = false,
+  isDropTarget = false,
+  onDragStartTrack,
+  onDragOverTrack,
+  onDropTrack,
+  onDragEndTrack,
+}: TrackHeaderProps) {
   const updateTrack = useProjectStore((s) => s.updateTrack);
   const removeTrack = useProjectStore((s) => s.removeTrack);
   const project = useProjectStore((s) => s.project);
@@ -78,8 +92,38 @@ export function TrackHeader({ track }: TrackHeaderProps) {
     }
   };
 
+  const handleDragStart = (event: DragEvent<HTMLDivElement>) => {
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', track.id);
+    onDragStartTrack?.(track.id);
+  };
+
+  const handleDragOver = (event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+    onDragOverTrack?.(track.id);
+  };
+
+  const handleDrop = (event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    onDropTrack?.(track.id);
+  };
+
   return (
-    <div className="flex flex-col justify-between h-24 border-b border-daw-border bg-daw-panel group hover:bg-daw-panel-light transition-colors">
+    <div
+      draggable
+      onDragStart={handleDragStart}
+      onDragOver={handleDragOver}
+      onDrop={handleDrop}
+      onDragEnd={onDragEndTrack}
+      className={`flex flex-col justify-between h-24 border-b border-daw-border group transition-colors cursor-grab active:cursor-grabbing ${
+        isDragging
+          ? 'bg-daw-panel-light opacity-70'
+          : isDropTarget
+            ? 'bg-daw-accent/10 ring-1 ring-inset ring-daw-accent/50'
+            : 'bg-daw-panel hover:bg-daw-panel-light'
+      }`}
+    >
       <input
         ref={fileInputRef}
         type="file"

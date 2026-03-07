@@ -12,6 +12,8 @@ import {
 } from '../constants/defaults';
 import { saveProject as saveProjectToIDB } from '../services/projectStorage';
 import { deleteAudioBlob } from '../services/audioFileManager';
+import { reorderTracksByTarget } from './trackOrder';
+import { resolveClipMusicalOverrides } from './clipMusicalDefaults';
 
 const MIN_TIMELINE_DURATION = 30; // seconds
 const TIMELINE_PADDING = 10;      // seconds beyond last clip
@@ -29,6 +31,7 @@ interface ProjectState {
 
   addTrack: (trackName: TrackName) => Track;
   removeTrack: (trackId: string) => void;
+  reorderTrack: (draggedTrackId: string, targetTrackId: string) => void;
   updateTrack: (trackId: string, updates: Partial<Pick<Track, 'displayName' | 'volume' | 'muted' | 'soloed'>>) => void;
 
   addClip: (trackId: string, clip: Omit<Clip, 'id' | 'trackId' | 'generationStatus' | 'generationJobId' | 'cumulativeMixKey' | 'isolatedAudioKey' | 'waveformPeaks'>) => Clip;
@@ -161,6 +164,26 @@ export const useProjectStore = create<ProjectState>()(
         });
       },
 
+      reorderTrack: (draggedTrackId, targetTrackId) => {
+        const state = get();
+        if (!state.project) return;
+
+        const reorderedTracks = reorderTracksByTarget(
+          state.project.tracks,
+          draggedTrackId,
+          targetTrackId,
+        );
+        if (reorderedTracks === state.project.tracks) return;
+
+        set({
+          project: {
+            ...state.project,
+            updatedAt: Date.now(),
+            tracks: reorderedTracks,
+          },
+        });
+      },
+
       updateTrack: (trackId, updates) => {
         const state = get();
         if (!state.project) return;
@@ -178,6 +201,7 @@ export const useProjectStore = create<ProjectState>()(
       addClip: (trackId, clipData) => {
         const state = get();
         if (!state.project) throw new Error('No project');
+        const musicalOverrides = resolveClipMusicalOverrides(clipData);
 
         const clip: Clip = {
           id: uuidv4(),
@@ -193,9 +217,9 @@ export const useProjectStore = create<ProjectState>()(
           cumulativeMixKey: null,
           isolatedAudioKey: null,
           waveformPeaks: null,
-          bpm: 'auto',
-          keyScale: 'auto',
-          timeSignature: 'auto',
+          bpm: musicalOverrides.bpm,
+          keyScale: musicalOverrides.keyScale,
+          timeSignature: musicalOverrides.timeSignature,
         };
 
         const newTracks = state.project.tracks.map((t) =>

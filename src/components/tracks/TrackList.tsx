@@ -1,4 +1,4 @@
-import { useCallback, type MutableRefObject, type UIEvent } from 'react';
+import { useCallback, useState, type MutableRefObject, type UIEvent } from 'react';
 import { useProjectStore } from '../../store/projectStore';
 import { useArrangementStore } from '../../store/arrangementStore';
 import { TrackHeader } from './TrackHeader';
@@ -11,9 +11,12 @@ interface TrackListProps {
 
 export function TrackList({ scrollBodyRef, onVerticalScroll }: TrackListProps) {
   const project = useProjectStore((s) => s.project);
+  const reorderTrack = useProjectStore((s) => s.reorderTrack);
   const workspace = useArrangementStore((s) =>
     project ? s.workspacesByProjectId[project.id] ?? null : null,
   );
+  const [draggedTrackId, setDraggedTrackId] = useState<string | null>(null);
+  const [dropTargetTrackId, setDropTargetTrackId] = useState<string | null>(null);
 
   if (!project) return null;
 
@@ -26,6 +29,23 @@ export function TrackList({ scrollBodyRef, onVerticalScroll }: TrackListProps) {
   const handleScroll = useCallback((event: UIEvent<HTMLDivElement>) => {
     onVerticalScroll?.(event.currentTarget.scrollTop);
   }, [onVerticalScroll]);
+  const clearDragState = useCallback(() => {
+    setDraggedTrackId(null);
+    setDropTargetTrackId(null);
+  }, []);
+  const handleDragStartTrack = useCallback((trackId: string) => {
+    setDraggedTrackId(trackId);
+    setDropTargetTrackId(null);
+  }, []);
+  const handleDragOverTrack = useCallback((trackId: string) => {
+    setDropTargetTrackId(trackId);
+  }, []);
+  const handleDropTrack = useCallback((targetTrackId: string) => {
+    if (draggedTrackId && draggedTrackId !== targetTrackId) {
+      reorderTrack(draggedTrackId, targetTrackId);
+    }
+    clearDragState();
+  }, [clearDragState, draggedTrackId, reorderTrack]);
 
   return (
     <div className="flex flex-col w-full h-full bg-daw-panel border-r border-daw-border z-10 shadow-sm shrink-0">
@@ -38,7 +58,16 @@ export function TrackList({ scrollBodyRef, onVerticalScroll }: TrackListProps) {
         onScroll={handleScroll}
       >
         {sortedTracks.map((track) => (
-          <TrackHeader key={track.id} track={track} />
+          <TrackHeader
+            key={track.id}
+            track={track}
+            isDragging={draggedTrackId === track.id}
+            isDropTarget={dropTargetTrackId === track.id && draggedTrackId !== track.id}
+            onDragStartTrack={handleDragStartTrack}
+            onDragOverTrack={handleDragOverTrack}
+            onDropTrack={handleDropTrack}
+            onDragEndTrack={clearDragState}
+          />
         ))}
       </div>
 
