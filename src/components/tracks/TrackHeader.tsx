@@ -1,4 +1,4 @@
-import { useRef, useState, type ChangeEvent, type DragEvent } from 'react';
+import { useRef, useState, type ChangeEvent, type DragEvent, type PointerEvent as ReactPointerEvent } from 'react';
 import type { Track } from '../../types/project';
 import { useProjectStore } from '../../store/projectStore';
 import { useArrangementStore } from '../../store/arrangementStore';
@@ -7,6 +7,7 @@ import { getAudioEngine } from '../../hooks/useAudioEngine';
 import { loadAudioBlobByKey } from '../../services/audioFileManager';
 import { exportMixToWav } from '../../engine/exportMix';
 import { isArrangementClipSelected } from '../../features/arrangement/selection';
+import { shouldBlockTrackDragForTagName } from './trackDragGuards';
 
 interface TrackHeaderProps {
   track: Track;
@@ -35,6 +36,7 @@ export function TrackHeader({
   );
   const { importAudioToTrack } = useAudioImport();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const suppressDragRef = useRef(false);
   const [isDownloading, setIsDownloading] = useState(false);
 
   const volumePct = Math.round(track.volume * 100);
@@ -92,7 +94,37 @@ export function TrackHeader({
     }
   };
 
+  const handlePointerDownCapture = (event: ReactPointerEvent<HTMLDivElement>) => {
+    let node = event.target as HTMLElement | null;
+    suppressDragRef.current = false;
+    while (node && node !== event.currentTarget) {
+      if (shouldBlockTrackDragForTagName(node.tagName) || node.dataset.noTrackDrag === 'true') {
+        suppressDragRef.current = true;
+        return;
+      }
+      node = node.parentElement;
+    }
+  };
+
+  const clearDragSuppression = () => {
+    suppressDragRef.current = false;
+  };
+
   const handleDragStart = (event: DragEvent<HTMLDivElement>) => {
+    if (suppressDragRef.current) {
+      event.preventDefault();
+      return;
+    }
+
+    let node = event.target as HTMLElement | null;
+    while (node && node !== event.currentTarget) {
+      if (shouldBlockTrackDragForTagName(node.tagName) || node.dataset.noTrackDrag === 'true') {
+        event.preventDefault();
+        return;
+      }
+      node = node.parentElement;
+    }
+
     event.dataTransfer.effectAllowed = 'move';
     event.dataTransfer.setData('text/plain', track.id);
     onDragStartTrack?.(track.id);
@@ -115,6 +147,9 @@ export function TrackHeader({
       onDragStart={handleDragStart}
       onDragOver={handleDragOver}
       onDrop={handleDrop}
+      onPointerDownCapture={handlePointerDownCapture}
+      onPointerUpCapture={clearDragSuppression}
+      onPointerCancel={clearDragSuppression}
       onDragEnd={onDragEndTrack}
       className={`flex flex-col justify-between h-24 border-b border-daw-border group transition-colors cursor-grab active:cursor-grabbing ${
         isDragging
@@ -144,7 +179,7 @@ export function TrackHeader({
         </div>
 
         {/* Mute / Solo / Remove buttons */}
-        <div className="flex gap-1">
+        <div className="flex gap-1" data-no-track-drag="true">
           <button
             onClick={() => updateTrack(track.id, { muted: !track.muted })}
             className={`w-5 h-4 text-[8px] font-bold flex items-center justify-center rounded transition-colors ${track.muted
@@ -193,7 +228,7 @@ export function TrackHeader({
       </div>
 
       {/* Bottom: Volume meter */}
-      <div className="px-2.5 pb-2">
+      <div className="px-2.5 pb-2" data-no-track-drag="true">
         <input
           type="range"
           min="0"
