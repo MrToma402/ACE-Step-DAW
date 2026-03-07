@@ -76,6 +76,7 @@ export function useGeneration() {
             timeSignature: clip.timeSignature,
             sampleMode: clip.sampleMode,
             autoExpandPrompt: clip.autoExpandPrompt,
+            lockedSeed: clip.lockedSeed,
           });
 
           continuationClipId = continuationClip.id;

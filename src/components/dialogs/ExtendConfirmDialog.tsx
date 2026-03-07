@@ -47,6 +47,7 @@ export function ExtendConfirmDialog() {
         timeSignature: sourceClip.timeSignature,
         sampleMode: sourceClip.sampleMode,
         autoExpandPrompt: sourceClip.autoExpandPrompt,
+        lockedSeed: sourceClip.lockedSeed,
       });
 
       closeDialog();

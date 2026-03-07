@@ -95,10 +95,12 @@ export function ClipPromptEditor() {
   const toggleSeedLock = () => {
     if (seedIsLocked) {
       setLockedSeed(null);
+      updateClip(editingClipId, { lockedSeed: null });
       return;
     }
     if (latestSeed) {
       setLockedSeed(latestSeed);
+      updateClip(editingClipId, { lockedSeed: latestSeed });
     }
   };
 
