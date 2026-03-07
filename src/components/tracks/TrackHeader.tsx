@@ -150,19 +150,16 @@ export function TrackHeader({ track }: TrackHeaderProps) {
 
       {/* Bottom: Volume meter */}
       <div className="px-2.5 pb-2">
-        <div className="w-full h-1 bg-black/50 rounded-full overflow-hidden">
-          <div
-            className="h-full bg-emerald-500/80 transition-all"
-            style={{ width: `${volumePct}%` }}
-          />
-        </div>
         <input
           type="range"
           min="0"
           max="100"
           value={volumePct}
-          onChange={(e) => updateTrack(track.id, { volume: parseInt(e.target.value) / 100 })}
-          className="w-full h-0.5 mt-0.5 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+          onChange={(e) => updateTrack(track.id, { volume: parseInt(e.target.value, 10) / 100 })}
+          className="w-full h-1.5 cursor-pointer rounded-full"
+          style={{
+            background: `linear-gradient(to right, rgba(16,185,129,0.8) 0%, rgba(16,185,129,0.8) ${volumePct}%, rgba(0,0,0,0.5) ${volumePct}%, rgba(0,0,0,0.5) 100%)`,
+          }}
           title={`Volume: ${volumePct}%`}
         />
       </div>
