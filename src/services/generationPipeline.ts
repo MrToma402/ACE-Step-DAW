@@ -14,6 +14,48 @@ import { computeWaveformPeaks } from '../utils/waveformPeaks';
 import { POLL_INTERVAL_MS, MAX_POLL_DURATION_MS } from '../constants/defaults';
 import { buildLegoPromptContent } from './legoPromptBuilder';
 
+interface PreviousContext {
+  blob: Blob | null;
+  endTime: number | null;
+}
+
+async function buildLegoSourceAudio(
+  previousCumulativeBlob: Blob | null,
+  previousContextEnd: number | null,
+  totalDuration: number,
+): Promise<Blob> {
+  if (!previousCumulativeBlob) {
+    return generateSilenceWav(totalDuration);
+  }
+  if (previousContextEnd == null) {
+    return previousCumulativeBlob;
+  }
+
+  const engine = getAudioEngine();
+  const decoded = await engine.decodeAudioData(previousCumulativeBlob);
+  const cutoffSample = Math.max(0, Math.min(
+    decoded.length,
+    Math.floor(previousContextEnd * decoded.sampleRate),
+  ));
+  if (cutoffSample >= decoded.length) {
+    return previousCumulativeBlob;
+  }
+
+  const sanitized = engine.ctx.createBuffer(
+    decoded.numberOfChannels,
+    decoded.length,
+    decoded.sampleRate,
+  );
+  for (let ch = 0; ch < decoded.numberOfChannels; ch++) {
+    const src = decoded.getChannelData(ch);
+    const dst = sanitized.getChannelData(ch);
+    if (cutoffSample > 0) {
+      dst.set(src.subarray(0, cutoffSample), 0);
+    }
+  }
+  return audioBufferToWavBlob(sanitized);
+}
+
 /**
  * Generate all tracks sequentially (bottom → top in generation order).
  */
@@ -27,6 +69,7 @@ export async function generateAllTracks(): Promise<void> {
   try {
     const tracks = getTracksInGenerationOrder();
     let previousCumulativeBlob: Blob | null = null;
+    let previousContextEnd: number | null = null;
 
     for (const track of tracks) {
       for (const clip of track.clips) {
@@ -34,7 +77,10 @@ export async function generateAllTracks(): Promise<void> {
           // Already generated — use its cumulative mix as input for next track
           if (clip.cumulativeMixKey) {
             const blob = await loadAudioBlobByKey(clip.cumulativeMixKey);
-            if (blob) previousCumulativeBlob = blob;
+            if (blob) {
+              previousCumulativeBlob = blob;
+              previousContextEnd = clip.startTime + clip.duration;
+            }
           }
           continue;
         }
@@ -42,7 +88,12 @@ export async function generateAllTracks(): Promise<void> {
         previousCumulativeBlob = await generateClipInternal(
           clip.id,
           previousCumulativeBlob,
+          previousContextEnd,
         );
+        const generatedClip = useProjectStore.getState().getClipById(clip.id);
+        if (generatedClip?.generationStatus === 'ready') {
+          previousContextEnd = generatedClip.startTime + generatedClip.duration;
+        }
       }
     }
   } finally {
@@ -60,8 +111,8 @@ export async function generateSingleClip(clipId: string): Promise<void> {
 
   try {
     // Find the previous cumulative blob (from the track generated just before this one)
-    const previousBlob = await getPreviousCumulativeBlob(clipId);
-    await generateClipInternal(clipId, previousBlob);
+    const previous = await getPreviousContext(clipId);
+    await generateClipInternal(clipId, previous.blob, previous.endTime);
   } finally {
     useGenerationStore.getState().setIsGenerating(false);
   }
@@ -79,33 +130,51 @@ export async function generateClipWithContext(
   return nextBlob;
 }
 
-async function getPreviousCumulativeBlob(clipId: string): Promise<Blob | null> {
+async function getPreviousContext(clipId: string): Promise<PreviousContext> {
   const { project, getTracksInGenerationOrder } = useProjectStore.getState();
-  if (!project) return null;
+  if (!project) {
+    return { blob: null, endTime: null };
+  }
 
   const tracks = getTracksInGenerationOrder();
   const clipTrack = tracks.find((t) => t.clips.some((c) => c.id === clipId));
-  if (!clipTrack) return null;
+  if (!clipTrack) {
+    return { blob: null, endTime: null };
+  }
 
   // Find the track generated just before this one
   const trackIndex = tracks.indexOf(clipTrack);
   for (let i = trackIndex - 1; i >= 0; i--) {
     const prevTrack = tracks[i];
-    // Get the last clip's cumulative mix
-    for (let j = prevTrack.clips.length - 1; j >= 0; j--) {
-      const prevClip = prevTrack.clips[j];
-      if (prevClip.cumulativeMixKey) {
-        return await loadAudioBlobByKey(prevClip.cumulativeMixKey) ?? null;
+    // Use the furthest ready cumulative clip as context end marker.
+    let furthestClip = null as typeof prevTrack.clips[number] | null;
+    for (const prevClip of prevTrack.clips) {
+      if (!prevClip.cumulativeMixKey) continue;
+      if (!furthestClip) {
+        furthestClip = prevClip;
+        continue;
       }
+      const currentEnd = prevClip.startTime + prevClip.duration;
+      const furthestEnd = furthestClip.startTime + furthestClip.duration;
+      if (currentEnd > furthestEnd) {
+        furthestClip = prevClip;
+      }
+    }
+    if (furthestClip?.cumulativeMixKey) {
+      return {
+        blob: await loadAudioBlobByKey(furthestClip.cumulativeMixKey) ?? null,
+        endTime: furthestClip.startTime + furthestClip.duration,
+      };
     }
   }
 
-  return null;
+  return { blob: null, endTime: null };
 }
 
 async function generateClipInternal(
   clipId: string,
   previousCumulativeBlob: Blob | null,
+  previousContextEnd: number | null = null,
 ): Promise<Blob | null> {
   const store = useProjectStore.getState();
   const genStore = useGenerationStore.getState();
@@ -130,7 +199,11 @@ async function generateClipInternal(
 
   try {
     // Determine src_audio
-    const srcAudioBlob = previousCumulativeBlob ?? generateSilenceWav(project.totalDuration);
+    const srcAudioBlob = await buildLegoSourceAudio(
+      previousCumulativeBlob,
+      previousContextEnd,
+      project.totalDuration,
+    );
 
     // Build params — 'auto' = ACE-Step infers, null/undefined = project defaults, value = manual
     const resolvedBpm = clip.bpm === 'auto' ? null : (clip.bpm ?? project.bpm);
@@ -263,7 +336,9 @@ async function generateClipInternal(
 
     let previousBuffer: AudioBuffer | null = null;
     if (previousCumulativeBlob) {
-      previousBuffer = await engine.decodeAudioData(previousCumulativeBlob);
+      // Use the same sanitized context that was fed to LEGO. This keeps
+      // subtraction stable in regions beyond real context coverage.
+      previousBuffer = await engine.decodeAudioData(srcAudioBlob);
     }
 
     const fullIsolatedBuffer = isolateTrackAudio(engine.ctx, cumulativeBuffer, previousBuffer);
