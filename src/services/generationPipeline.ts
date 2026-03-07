@@ -262,9 +262,6 @@ async function generateClipInternal(
     const legoPrompt = buildLegoPromptContent({
       clip,
       track,
-      bpm: resolvedBpm,
-      keyScale: resolvedKey,
-      timeSignature: resolvedTimeSig,
     });
     const generationTextInputs = buildTrackGenerationTextInputs(
       track.trackName,
