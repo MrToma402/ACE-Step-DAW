@@ -13,11 +13,7 @@ import { audioBufferToWavBlob } from '../utils/wav';
 import { computeWaveformPeaks } from '../utils/waveformPeaks';
 import { POLL_INTERVAL_MS, MAX_POLL_DURATION_MS } from '../constants/defaults';
 import { buildLegoPromptContent } from './legoPromptBuilder';
-
-interface PreviousContext {
-  blob: Blob | null;
-  endTime: number | null;
-}
+import { buildRegenerationContextMix } from './regenerationContext';
 
 const EDGE_FADE_SECONDS = 0.005;
 const TARGET_ISOLATED_PEAK = 0.98;
@@ -195,9 +191,11 @@ export async function generateSingleClip(clipId: string): Promise<void> {
   genStore.setIsGenerating(true);
 
   try {
-    // Find the previous cumulative blob (from the track generated just before this one)
-    const previous = await getPreviousContext(clipId);
-    await generateClipInternal(clipId, previous.blob, previous.endTime);
+    const { project } = useProjectStore.getState();
+    const context = project
+      ? await buildRegenerationContextMix(project, clipId)
+      : { blob: null, endTime: null };
+    await generateClipInternal(clipId, context.blob, context.endTime);
   } finally {
     useGenerationStore.getState().setIsGenerating(false);
   }
@@ -214,47 +212,6 @@ export async function generateClipWithContext(
     throw new Error(clip?.errorMessage || 'Generation failed');
   }
   return nextBlob;
-}
-
-async function getPreviousContext(clipId: string): Promise<PreviousContext> {
-  const { project, getTracksInGenerationOrder } = useProjectStore.getState();
-  if (!project) {
-    return { blob: null, endTime: null };
-  }
-
-  const tracks = getTracksInGenerationOrder();
-  const clipTrack = tracks.find((t) => t.clips.some((c) => c.id === clipId));
-  if (!clipTrack) {
-    return { blob: null, endTime: null };
-  }
-
-  // Find the track generated just before this one
-  const trackIndex = tracks.indexOf(clipTrack);
-  for (let i = trackIndex - 1; i >= 0; i--) {
-    const prevTrack = tracks[i];
-    // Use the furthest ready cumulative clip as context end marker.
-    let furthestClip = null as typeof prevTrack.clips[number] | null;
-    for (const prevClip of prevTrack.clips) {
-      if (!prevClip.cumulativeMixKey) continue;
-      if (!furthestClip) {
-        furthestClip = prevClip;
-        continue;
-      }
-      const currentEnd = prevClip.startTime + prevClip.duration;
-      const furthestEnd = furthestClip.startTime + furthestClip.duration;
-      if (currentEnd > furthestEnd) {
-        furthestClip = prevClip;
-      }
-    }
-    if (furthestClip?.cumulativeMixKey) {
-      return {
-        blob: await loadAudioBlobByKey(furthestClip.cumulativeMixKey) ?? null,
-        endTime: furthestClip.startTime + furthestClip.duration,
-      };
-    }
-  }
-
-  return { blob: null, endTime: null };
 }
 
 async function generateClipInternal(
