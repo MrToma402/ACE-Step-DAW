@@ -8,6 +8,11 @@ const ACTION_LABELS: Record<ShortcutAction, string> = {
   deleteSelected: 'Delete selected clips',
 };
 
+const BUILT_IN_SHORTCUTS = [
+  { label: 'Duplicate selected clips', keys: ['Ctrl', 'D'] },
+  { label: 'Duplicate to new layer', keys: ['Ctrl', 'Shift', 'D'] },
+] as const;
+
 function formatKeyCode(code: string): string {
   if (code === 'Space') return 'Space';
   if (code === 'Backspace') return 'Backspace';
@@ -15,6 +20,10 @@ function formatKeyCode(code: string): string {
   if (code.startsWith('Key')) return code.slice(3).toUpperCase();
   if (code.startsWith('Digit')) return code.slice(5);
   return code;
+}
+
+function formatKeyCombo(keys: readonly string[]): string {
+  return keys.join(' + ');
 }
 
 export function KeyboardShortcutsDialog() {
@@ -94,6 +103,20 @@ export function KeyboardShortcutsDialog() {
               </div>
             );
           })}
+          <div className="pt-2 mt-2 border-t border-daw-border space-y-2">
+            <p className="text-[11px] text-zinc-400 uppercase tracking-wide">Built-in</p>
+            {BUILT_IN_SHORTCUTS.map((shortcut) => (
+              <div
+                key={shortcut.label}
+                className="rounded border border-daw-border bg-daw-bg px-3 py-2 flex items-center justify-between gap-2"
+              >
+                <span className="text-xs text-zinc-300">{shortcut.label}</span>
+                <kbd className="rounded bg-daw-surface-2 px-2 py-1 text-xs text-zinc-100">
+                  {formatKeyCombo(shortcut.keys)}
+                </kbd>
+              </div>
+            ))}
+          </div>
           <p className="text-[10px] text-zinc-500">
             Shortcut actions are disabled while typing in input fields.
           </p>

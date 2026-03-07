@@ -21,11 +21,17 @@ import { useUIStore } from '../../store/uiStore';
 import { useTransport } from '../../hooks/useTransport';
 import { useArrangementStore } from '../../store/arrangementStore';
 import { useDawLayoutResize } from '../../hooks/useDawLayoutResize';
+import { resolveDuplicateShortcutAction } from '../../features/timeline/duplicateShortcut';
 
 export function AppShell() {
   const { resumeOnGesture } = useAudioEngine();
   const project = useProjectStore((s) => s.project);
   const removeClip = useProjectStore((s) => s.removeClip);
+  const duplicateClip = useProjectStore((s) => s.duplicateClip);
+  const addTrack = useProjectStore((s) => s.addTrack);
+  const moveClipToTrack = useProjectStore((s) => s.moveClipToTrack);
+  const getClipById = useProjectStore((s) => s.getClipById);
+  const getTrackForClip = useProjectStore((s) => s.getTrackForClip);
   const activeTab = useUIStore((s) => s.activeTab);
   const showMixer = useUIStore((s) => s.showMixer);
   const showKeyboardShortcutsDialog = useUIStore((s) => s.showKeyboardShortcutsDialog);
@@ -122,6 +128,30 @@ export function AppShell() {
       ) {
         return;
       }
+
+      const duplicateAction = resolveDuplicateShortcutAction(e);
+      if (duplicateAction) {
+        if (activeTab !== 'daw' || selectedClipIds.size === 0) return;
+        e.preventDefault();
+        const selectedIds = Array.from(selectedClipIds);
+        if (duplicateAction === 'duplicate') {
+          for (const clipId of selectedIds) {
+            duplicateClip(clipId);
+          }
+        } else {
+          for (const clipId of selectedIds) {
+            const sourceClip = getClipById(clipId);
+            if (!sourceClip) continue;
+            const sourceTrack = getTrackForClip(clipId);
+            const duplicatedClip = duplicateClip(clipId);
+            if (!duplicatedClip) continue;
+            const layerTrack = addTrack(sourceTrack?.trackName ?? 'custom');
+            moveClipToTrack(duplicatedClip.id, layerTrack.id, { startTime: sourceClip.startTime });
+          }
+        }
+        return;
+      }
+
       if (e.code === shortcutBindings.playPause) {
         e.preventDefault();
         if (isPlaying) pause();
@@ -147,6 +177,11 @@ export function AppShell() {
     pause,
     play,
     removeClip,
+    duplicateClip,
+    addTrack,
+    moveClipToTrack,
+    getClipById,
+    getTrackForClip,
     selectedClipIds,
     showKeyboardShortcutsDialog,
     showNewProjectDialog,

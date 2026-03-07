@@ -31,8 +31,11 @@ export function ClipBlock({ clip, track }: ClipBlockProps) {
   const openExtendConfirmDialog = useUIStore((s) => s.openExtendConfirmDialog);
   const updateClip = useProjectStore((s) => s.updateClip);
   const moveClipToTrack = useProjectStore((s) => s.moveClipToTrack);
+  const addTrack = useProjectStore((s) => s.addTrack);
   const removeClip = useProjectStore((s) => s.removeClip);
   const duplicateClip = useProjectStore((s) => s.duplicateClip);
+  const getClipById = useProjectStore((s) => s.getClipById);
+  const getTrackForClip = useProjectStore((s) => s.getTrackForClip);
   const generationJobs = useGenerationStore((s) => s.jobs);
   const project = useProjectStore((s) => s.project);
   const workspace = useArrangementStore((s) =>
@@ -235,6 +238,15 @@ export function ClipBlock({ clip, track }: ClipBlockProps) {
   }, []);
 
   const closeCtxMenu = useCallback(() => setCtxMenu(null), []);
+  const handleDuplicateToNewLayer = useCallback(() => {
+    const sourceClip = getClipById(clip.id);
+    if (!sourceClip) return;
+    const sourceTrack = getTrackForClip(clip.id);
+    const duplicatedClip = duplicateClip(clip.id);
+    if (!duplicatedClip) return;
+    const layerTrack = addTrack(sourceTrack?.trackName ?? 'custom');
+    moveClipToTrack(duplicatedClip.id, layerTrack.id, { startTime: sourceClip.startTime });
+  }, [addTrack, clip.id, duplicateClip, getClipById, getTrackForClip, moveClipToTrack]);
 
   const handleMouseMoveLocal = useCallback((e: React.MouseEvent) => {
     const rect = e.currentTarget.getBoundingClientRect();
@@ -422,6 +434,7 @@ export function ClipBlock({ clip, track }: ClipBlockProps) {
           onEdit={() => { closeCtxMenu(); setEditingClip(clip.id); }}
           onGenerate={() => { closeCtxMenu(); generateClip(clip.id); }}
           onDuplicate={() => { closeCtxMenu(); duplicateClip(clip.id); }}
+          onDuplicateToNewLayer={() => { closeCtxMenu(); handleDuplicateToNewLayer(); }}
           onDelete={() => { closeCtxMenu(); removeClip(clip.id); }}
           onClose={closeCtxMenu}
           hasPrompt={!!clip.prompt}
@@ -432,13 +445,14 @@ export function ClipBlock({ clip, track }: ClipBlockProps) {
 }
 
 function ClipContextMenu({
-  x, y, onEdit, onGenerate, onDuplicate, onDelete, onClose, hasPrompt,
+  x, y, onEdit, onGenerate, onDuplicate, onDuplicateToNewLayer, onDelete, onClose, hasPrompt,
 }: {
   x: number;
   y: number;
   onEdit: () => void;
   onGenerate: () => void;
   onDuplicate: () => void;
+  onDuplicateToNewLayer: () => void;
   onDelete: () => void;
   onClose: () => void;
   hasPrompt: boolean;
@@ -447,7 +461,7 @@ function ClipContextMenu({
     <>
       <div className="fixed inset-0 z-40" onClick={onClose} onContextMenu={(e) => { e.preventDefault(); onClose(); }} />
       <div
-        className="fixed z-50 bg-daw-panel border border-daw-border rounded shadow-2xl py-1 min-w-[140px]"
+        className="fixed z-50 bg-daw-panel border border-daw-border rounded shadow-2xl py-1 min-w-[220px]"
         style={{ left: x, top: y }}
       >
         <button
@@ -470,7 +484,14 @@ function ClipContextMenu({
           className="w-full text-left px-3 py-1.5 text-xs text-slate-300 hover:bg-white/5 transition-colors flex items-center gap-2"
         >
           <span className="material-symbols-outlined text-xs">content_copy</span>
-          Duplicate
+          Duplicate (Ctrl+D)
+        </button>
+        <button
+          onClick={onDuplicateToNewLayer}
+          className="w-full text-left px-3 py-1.5 text-xs text-slate-300 hover:bg-white/5 transition-colors flex items-center gap-2"
+        >
+          <span className="material-symbols-outlined text-xs">view_week</span>
+          Duplicate to New Layer (Ctrl+Shift+D)
         </button>
         <div className="my-1 border-t border-daw-border" />
         <button
