@@ -1,4 +1,4 @@
-import { useEffect, useCallback } from 'react';
+import { useEffect, useCallback, useRef, type MutableRefObject } from 'react';
 import { Toolbar } from './Toolbar';
 import { StatusBar } from './StatusBar';
 import { TrackList } from '../tracks/TrackList';
@@ -36,6 +36,9 @@ export function AppShell() {
   const ensureProjectWorkspace = useArrangementStore((s) => s.ensureProjectWorkspace);
   const { isPlaying, play, pause } = useTransport();
   const { sidebarWidth, mixerHeight, startSidebarResize, startMixerResize } = useDawLayoutResize();
+  const sidebarScrollRef = useRef<HTMLDivElement | null>(null);
+  const timelineScrollRef = useRef<HTMLDivElement | null>(null);
+  const syncingScrollSourceRef = useRef<'sidebar' | 'timeline' | null>(null);
 
   const handleClick = useCallback(() => {
     resumeOnGesture();
@@ -92,6 +95,32 @@ export function AppShell() {
     shortcutBindings,
   ]);
 
+  const syncVerticalScroll = useCallback((
+    source: 'sidebar' | 'timeline',
+    targetRef: MutableRefObject<HTMLDivElement | null>,
+    scrollTop: number,
+  ) => {
+    if (syncingScrollSourceRef.current && syncingScrollSourceRef.current !== source) return;
+    syncingScrollSourceRef.current = source;
+    const target = targetRef.current;
+    if (target && Math.abs(target.scrollTop - scrollTop) > 1) {
+      target.scrollTop = scrollTop;
+    }
+    requestAnimationFrame(() => {
+      if (syncingScrollSourceRef.current === source) {
+        syncingScrollSourceRef.current = null;
+      }
+    });
+  }, []);
+
+  const handleSidebarScroll = useCallback((scrollTop: number) => {
+    syncVerticalScroll('sidebar', timelineScrollRef, scrollTop);
+  }, [syncVerticalScroll]);
+
+  const handleTimelineScroll = useCallback((scrollTop: number) => {
+    syncVerticalScroll('timeline', sidebarScrollRef, scrollTop);
+  }, [syncVerticalScroll]);
+
   return (
     <div className="flex flex-col h-screen bg-daw-bg" onClick={handleClick}>
       <Toolbar />
@@ -105,7 +134,10 @@ export function AppShell() {
                   className="shrink-0 h-full"
                   style={{ width: sidebarWidth, minWidth: 120, maxWidth: 360 }}
                 >
-                  <TrackList />
+                  <TrackList
+                    scrollBodyRef={sidebarScrollRef}
+                    onVerticalScroll={handleSidebarScroll}
+                  />
                 </div>
                 <div className="w-0 shrink-0 relative">
                   <div
@@ -117,10 +149,13 @@ export function AppShell() {
               </>
             )}
             <div className="flex-1 min-h-0 min-w-0 flex flex-col">
-              <Timeline />
-              {project && <ArrangementPanel />}
+              <Timeline
+                scrollBodyRef={timelineScrollRef}
+                onVerticalScroll={handleTimelineScroll}
+              />
             </div>
           </div>
+          {project && <ArrangementPanel />}
           {project && showMixer && (
             <div
               className="relative shrink-0"

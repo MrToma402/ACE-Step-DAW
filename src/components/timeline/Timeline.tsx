@@ -1,4 +1,4 @@
-import { useRef, useCallback } from 'react';
+import { useRef, useCallback, type MutableRefObject, type UIEvent } from 'react';
 import { useProjectStore } from '../../store/projectStore';
 import { useUIStore } from '../../store/uiStore';
 import { TimeRuler } from './TimeRuler';
@@ -7,7 +7,12 @@ import { Playhead } from './Playhead';
 import { GridOverlay } from './GridOverlay';
 import { SectionTimelineStrip } from './SectionTimelineStrip';
 
-export function Timeline() {
+interface TimelineProps {
+  scrollBodyRef?: MutableRefObject<HTMLDivElement | null>;
+  onVerticalScroll?: (scrollTop: number) => void;
+}
+
+export function Timeline({ scrollBodyRef, onVerticalScroll }: TimelineProps) {
   const project = useProjectStore((s) => s.project);
   const pixelsPerSecond = useUIStore((s) => s.pixelsPerSecond);
   const setPixelsPerSecond = useUIStore((s) => s.setPixelsPerSecond);
@@ -35,6 +40,15 @@ export function Timeline() {
     },
     [pixelsPerSecond, setPixelsPerSecond],
   );
+  const setScrollRef = useCallback((node: HTMLDivElement | null) => {
+    scrollRef.current = node;
+    if (scrollBodyRef) {
+      scrollBodyRef.current = node;
+    }
+  }, [scrollBodyRef]);
+  const handleVerticalScroll = useCallback((event: UIEvent<HTMLDivElement>) => {
+    onVerticalScroll?.(event.currentTarget.scrollTop);
+  }, [onVerticalScroll]);
 
   if (!project) {
     return (
@@ -47,10 +61,11 @@ export function Timeline() {
   return (
     <div className="flex-1 min-h-0 min-w-0 flex flex-col bg-daw-bg">
       <div
-        ref={scrollRef}
+        ref={setScrollRef}
         data-timeline-scroll-container="true"
         className="timeline-scroll relative flex-1 min-h-0 min-w-0 overflow-x-auto overflow-y-auto"
         onWheel={handleWheel}
+        onScroll={handleVerticalScroll}
       >
         <div className="relative" style={{ width: totalWidth, minWidth: '100%' }}>
           <div className="sticky top-0 z-40">
