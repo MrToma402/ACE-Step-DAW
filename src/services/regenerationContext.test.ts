@@ -4,6 +4,7 @@ import type { Clip, Project, Track } from '../types/project.ts';
 import {
   collectRegenerationContextSources,
   getRegenerationContextEnd,
+  resolveSourceWindow,
 } from './regenerationContext.ts';
 
 function makeClip(
@@ -156,4 +157,18 @@ test('collectRegenerationContextSources truncates future context at maxContextEn
   assert.deepEqual(sources.map((source) => source.clipId), ['a1', 'b1']);
   assert.deepEqual(sources.map((source) => source.playbackDuration), [8, 4]);
   assert.deepEqual(sources.map((source) => source.endTime), [8, 10]);
+});
+
+test('resolveSourceWindow truncates to decoded audio and skips empty windows', () => {
+  const source = {
+    clipId: 'x',
+    startTime: 12,
+    endTime: 20,
+    isolatedAudioKey: 'x-iso',
+    audioOffset: 1,
+    playbackDuration: 8,
+  };
+
+  assert.deepEqual(resolveSourceWindow(source, 5), { startTime: 12, duration: 4 });
+  assert.equal(resolveSourceWindow(source, 1), null);
 });

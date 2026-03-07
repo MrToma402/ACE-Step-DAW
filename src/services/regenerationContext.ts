@@ -17,6 +17,12 @@ export interface RegenerationContextSource {
 interface RegenerationContext {
   blob: Blob | null;
   endTime: number | null;
+  warningMessage: string | null;
+}
+
+interface SourceWindow {
+  startTime: number;
+  duration: number;
 }
 
 function getBufferPeak(buffer: AudioBuffer): number {
@@ -42,6 +48,19 @@ function limitBufferPeak(buffer: AudioBuffer, targetPeak: number): void {
       data[i] *= gain;
     }
   }
+}
+
+export function resolveSourceWindow(
+  source: RegenerationContextSource,
+  decodedDuration: number,
+): SourceWindow | null {
+  const availableDuration = Math.max(0, decodedDuration - source.audioOffset);
+  const effectiveDuration = Math.max(0, Math.min(source.playbackDuration, availableDuration));
+  if (effectiveDuration <= 0) return null;
+  return {
+    startTime: source.startTime,
+    duration: effectiveDuration,
+  };
 }
 
 /**
@@ -127,7 +146,7 @@ export async function buildRegenerationContextMix(
   );
   const endTime = getRegenerationContextEnd(sources);
   if (sources.length === 0 || endTime === null) {
-    return { blob: null, endTime: null };
+    return { blob: null, endTime: null, warningMessage: null };
   }
 
   const engine = getAudioEngine();
@@ -136,29 +155,51 @@ export async function buildRegenerationContextMix(
   const offlineCtx = new OfflineAudioContext(2, length, sampleRate);
   const masterGain = offlineCtx.createGain();
   masterGain.connect(offlineCtx.destination);
+  let usableSourceCount = 0;
+  let skippedSourceCount = 0;
 
   for (const source of sources) {
     const blob = await loadAudioBlobByKey(source.isolatedAudioKey);
     if (!blob) continue;
 
-    const decodedBuffer = await engine.decodeAudioData(blob);
-    const availableDuration = Math.max(0, decodedBuffer.duration - source.audioOffset);
-    const effectiveDuration = Math.max(0, Math.min(source.playbackDuration, availableDuration));
-    if (effectiveDuration <= 0) continue;
+    try {
+      const decodedBuffer = await engine.decodeAudioData(blob);
+      const window = resolveSourceWindow(source, decodedBuffer.duration);
+      if (!window) continue;
 
-    const bufferSource = offlineCtx.createBufferSource();
-    bufferSource.buffer = decodedBuffer;
-    const gainNode = offlineCtx.createGain();
-    gainNode.gain.value = 1;
-    bufferSource.connect(gainNode);
-    gainNode.connect(masterGain);
-    bufferSource.start(source.startTime, source.audioOffset, effectiveDuration);
+      const bufferSource = offlineCtx.createBufferSource();
+      bufferSource.buffer = decodedBuffer;
+      const gainNode = offlineCtx.createGain();
+      gainNode.gain.value = 1;
+      bufferSource.connect(gainNode);
+      gainNode.connect(masterGain);
+      bufferSource.start(window.startTime, source.audioOffset, window.duration);
+      usableSourceCount += 1;
+    } catch (error) {
+      skippedSourceCount += 1;
+      console.warn(
+        `[regenerationContext] Skipping broken context source for clip ${source.clipId}`,
+        error,
+      );
+    }
+  }
+
+  if (usableSourceCount === 0) {
+    const warningMessage = skippedSourceCount > 0
+      ? `Warning: ${skippedSourceCount} context stem(s) could not be decoded. Regenerating without context audio.`
+      : 'Warning: No valid context stems found. Regenerating without context audio.';
+    console.warn(`[regenerationContext] ${warningMessage}`);
+    return { blob: null, endTime: null, warningMessage };
   }
 
   const rendered = await offlineCtx.startRendering();
   limitBufferPeak(rendered, 0.98);
+  const warningMessage = skippedSourceCount > 0
+    ? `Warning: skipped ${skippedSourceCount} broken context stem(s). Generation used partial context.`
+    : null;
   return {
     blob: audioBufferToWavBlob(rendered),
     endTime,
+    warningMessage,
   };
 }

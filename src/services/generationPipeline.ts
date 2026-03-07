@@ -194,7 +194,10 @@ export async function generateSingleClip(clipId: string): Promise<void> {
     const { project } = useProjectStore.getState();
     const context = project
       ? await buildRegenerationContextMix(project, clipId)
-      : { blob: null, endTime: null };
+      : { blob: null, endTime: null, warningMessage: null };
+    if (context.warningMessage && typeof window !== 'undefined') {
+      window.alert(context.warningMessage);
+    }
     await generateClipInternal(clipId, context.blob, context.endTime);
   } finally {
     useGenerationStore.getState().setIsGenerating(false);
