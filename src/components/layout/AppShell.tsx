@@ -29,10 +29,24 @@ export function AppShell() {
   const activeTab = useUIStore((s) => s.activeTab);
   const showMixer = useUIStore((s) => s.showMixer);
   const showKeyboardShortcutsDialog = useUIStore((s) => s.showKeyboardShortcutsDialog);
+  const showNewProjectDialog = useUIStore((s) => s.showNewProjectDialog);
+  const showInstrumentPicker = useUIStore((s) => s.showInstrumentPicker);
+  const showExportDialog = useUIStore((s) => s.showExportDialog);
+  const showSettingsDialog = useUIStore((s) => s.showSettingsDialog);
+  const showProjectListDialog = useUIStore((s) => s.showProjectListDialog);
+  const editingClipId = useUIStore((s) => s.editingClipId);
+  const extendConfirmRequest = useUIStore((s) => s.extendConfirmRequest);
   const selectedClipIds = useUIStore((s) => s.selectedClipIds);
   const deselectAll = useUIStore((s) => s.deselectAll);
   const shortcutBindings = useUIStore((s) => s.shortcutBindings);
   const setShowNewProjectDialog = useUIStore((s) => s.setShowNewProjectDialog);
+  const setShowInstrumentPicker = useUIStore((s) => s.setShowInstrumentPicker);
+  const setShowExportDialog = useUIStore((s) => s.setShowExportDialog);
+  const setShowSettingsDialog = useUIStore((s) => s.setShowSettingsDialog);
+  const setShowProjectListDialog = useUIStore((s) => s.setShowProjectListDialog);
+  const setShowKeyboardShortcutsDialog = useUIStore((s) => s.setShowKeyboardShortcutsDialog);
+  const setEditingClip = useUIStore((s) => s.setEditingClip);
+  const closeExtendConfirmDialog = useUIStore((s) => s.closeExtendConfirmDialog);
   const ensureProjectWorkspace = useArrangementStore((s) => s.ensureProjectWorkspace);
   const { isPlaying, play, pause } = useTransport();
   const { sidebarWidth, mixerHeight, startSidebarResize, startMixerResize } = useDawLayoutResize();
@@ -56,7 +70,50 @@ export function AppShell() {
   }, [project?.id, project?.totalDuration, ensureProjectWorkspace]);
 
   useEffect(() => {
+    const closeTopmostOverlay = (): boolean => {
+      if (showKeyboardShortcutsDialog) {
+        setShowKeyboardShortcutsDialog(false);
+        return true;
+      }
+      if (extendConfirmRequest) {
+        closeExtendConfirmDialog();
+        return true;
+      }
+      if (editingClipId) {
+        setEditingClip(null);
+        return true;
+      }
+      if (showSettingsDialog) {
+        setShowSettingsDialog(false);
+        return true;
+      }
+      if (showExportDialog) {
+        setShowExportDialog(false);
+        return true;
+      }
+      if (showInstrumentPicker) {
+        setShowInstrumentPicker(false);
+        return true;
+      }
+      if (showProjectListDialog) {
+        setShowProjectListDialog(false);
+        return true;
+      }
+      if (showNewProjectDialog) {
+        setShowNewProjectDialog(false);
+        return true;
+      }
+      return false;
+    };
+
     const handler = (e: KeyboardEvent) => {
+      if (e.code === 'Escape') {
+        if (closeTopmostOverlay()) {
+          e.preventDefault();
+        }
+        return;
+      }
+
       if (
         showKeyboardShortcutsDialog ||
         e.target instanceof HTMLInputElement ||
@@ -92,7 +149,22 @@ export function AppShell() {
     removeClip,
     selectedClipIds,
     showKeyboardShortcutsDialog,
+    showNewProjectDialog,
+    showInstrumentPicker,
+    showExportDialog,
+    showSettingsDialog,
+    showProjectListDialog,
+    editingClipId,
+    extendConfirmRequest,
     shortcutBindings,
+    closeExtendConfirmDialog,
+    setEditingClip,
+    setShowExportDialog,
+    setShowInstrumentPicker,
+    setShowKeyboardShortcutsDialog,
+    setShowProjectListDialog,
+    setShowSettingsDialog,
+    setShowNewProjectDialog,
   ]);
 
   const syncVerticalScroll = useCallback((

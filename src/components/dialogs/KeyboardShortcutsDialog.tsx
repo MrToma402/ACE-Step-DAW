@@ -30,6 +30,7 @@ export function KeyboardShortcutsDialog() {
 
     const handler = (e: KeyboardEvent) => {
       e.preventDefault();
+      e.stopPropagation();
       if (e.code === 'Escape') {
         setCapturingAction(null);
         return;
@@ -38,8 +39,8 @@ export function KeyboardShortcutsDialog() {
       setCapturingAction(null);
     };
 
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
+    window.addEventListener('keydown', handler, { capture: true });
+    return () => window.removeEventListener('keydown', handler, { capture: true });
   }, [capturingAction, setShortcutBinding, show]);
 
   useEffect(() => {
