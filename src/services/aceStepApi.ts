@@ -13,13 +13,29 @@ const QUERY_TIMEOUT_MS = 15000;
 const DOWNLOAD_TIMEOUT_MS = 120000;
 const DOWNLOAD_RETRIES = 3;
 
-async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number): Promise<Response> {
+interface RequestOptions {
+  signal?: AbortSignal;
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof DOMException && error.name === 'AbortError';
+}
+
+async function fetchWithTimeout(
+  url: string,
+  init: RequestInit,
+  timeoutMs: number,
+  signal?: AbortSignal,
+): Promise<Response> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const abortListener = () => controller.abort();
+  signal?.addEventListener('abort', abortListener, { once: true });
   try {
     return await fetch(url, { ...init, signal: controller.signal });
   } finally {
     clearTimeout(timer);
+    signal?.removeEventListener('abort', abortListener);
   }
 }
 
@@ -53,13 +69,15 @@ export async function getStats(): Promise<StatsResponse> {
 export async function releaseLegoTask(
   srcAudioBlob: Blob,
   params: LegoTaskParams,
+  options?: RequestOptions,
 ): Promise<ReleaseTaskResponse> {
-  return releaseTask(srcAudioBlob, params);
+  return releaseTask(srcAudioBlob, params, options);
 }
 
 export async function releaseTask(
   srcAudioBlob: Blob | null,
   params: AnyTaskParams | LegoTaskParams,
+  options?: RequestOptions,
 ): Promise<ReleaseTaskResponse> {
   const formData = new FormData();
 
@@ -81,6 +99,7 @@ export async function releaseTask(
   const res = await apiFetch('/release_task', {
     method: 'POST',
     body: formData,
+    signal: options?.signal,
   });
 
   if (!res.ok) {
@@ -92,16 +111,47 @@ export async function releaseTask(
   return envelope.data;
 }
 
-export async function queryResult(taskIds: string[]): Promise<TaskResultEntry[]> {
+export async function cancelTask(taskId: string): Promise<void> {
+  const candidates: Array<{ path: string; method: 'POST' | 'DELETE'; body?: Record<string, unknown> }> = [
+    { path: '/cancel_task', method: 'POST', body: { task_id: taskId } },
+    { path: '/v1/cancel_task', method: 'POST', body: { task_id: taskId } },
+    { path: '/v1/task/cancel', method: 'POST', body: { task_id: taskId } },
+    { path: '/v1/jobs/cancel', method: 'POST', body: { task_id: taskId } },
+    { path: '/jobs/cancel', method: 'POST', body: { task_id: taskId } },
+    { path: '/v1/job/cancel', method: 'POST', body: { task_id: taskId } },
+    { path: `/v1/tasks/${encodeURIComponent(taskId)}`, method: 'DELETE' },
+    { path: `/tasks/${encodeURIComponent(taskId)}`, method: 'DELETE' },
+  ];
+
+  for (const candidate of candidates) {
+    try {
+      const response = await apiFetch(candidate.path, {
+        method: candidate.method,
+        headers: candidate.body ? { 'Content-Type': 'application/json' } : undefined,
+        body: candidate.body ? JSON.stringify(candidate.body) : undefined,
+      });
+      if (response.ok || response.status === 404 || response.status === 405) {
+        return;
+      }
+    } catch {
+      return;
+    }
+  }
+}
+
+export async function queryResult(taskIds: string[], options?: RequestOptions): Promise<TaskResultEntry[]> {
   let res: Response;
   try {
     res = await fetchWithTimeout(buildApiUrl('/query_result'), {
       method: 'POST',
       headers: withApiHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ task_id_list: taskIds }),
-    }, QUERY_TIMEOUT_MS);
+    }, QUERY_TIMEOUT_MS, options?.signal);
   } catch (error) {
-    if (error instanceof DOMException && error.name === 'AbortError') {
+    if (isAbortError(error)) {
+      if (options?.signal?.aborted) {
+        throw error;
+      }
       throw new Error('queryResult timed out');
     }
     throw error;
@@ -112,7 +162,7 @@ export async function queryResult(taskIds: string[]): Promise<TaskResultEntry[]>
   return envelope.data;
 }
 
-export async function downloadAudio(audioPath: string): Promise<Blob> {
+export async function downloadAudio(audioPath: string, options?: RequestOptions): Promise<Blob> {
   // The file field may already be "/v1/audio?path=..." or a full URL.
   // Otherwise treat it as a server filesystem path for /v1/audio.
   let url: string;
@@ -130,12 +180,13 @@ export async function downloadAudio(audioPath: string): Promise<Blob> {
       const res = await fetchWithTimeout(url, {
         method: 'GET',
         headers: withApiHeaders(),
-      }, DOWNLOAD_TIMEOUT_MS);
+      }, DOWNLOAD_TIMEOUT_MS, options?.signal);
       if (!res.ok) {
         throw new Error(`downloadAudio failed: ${res.status} ${res.statusText}`);
       }
       return await res.blob();
     } catch (error) {
+      if (isAbortError(error)) throw error;
       lastError = error;
       if (attempt < DOWNLOAD_RETRIES) {
         await sleep(500 * attempt);
@@ -144,7 +195,10 @@ export async function downloadAudio(audioPath: string): Promise<Blob> {
     }
   }
 
-  if (lastError instanceof DOMException && lastError.name === 'AbortError') {
+  if (isAbortError(lastError)) {
+    if (options?.signal?.aborted) {
+      throw lastError;
+    }
     throw new Error('downloadAudio timed out');
   }
   throw lastError instanceof Error ? lastError : new Error('downloadAudio failed');

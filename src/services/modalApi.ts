@@ -16,6 +16,11 @@ interface ModalProgressUpdate {
   progressText: string;
 }
 
+interface ModalGenerationOptions {
+  signal?: AbortSignal;
+  onTaskCreated?: (taskId: string) => void;
+}
+
 export interface ModalGenerationResult {
   audioBlob: Blob;
   metas: TaskResultItem['metas'];
@@ -34,6 +39,24 @@ export interface LoraInfo {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function sleepWithAbort(ms: number, signal?: AbortSignal): Promise<void> {
+  if (!signal) return sleep(ms);
+  if (signal.aborted) {
+    throw new DOMException('The operation was aborted.', 'AbortError');
+  }
+  return new Promise((resolve, reject) => {
+    const timeoutId = setTimeout(() => {
+      signal.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timeoutId);
+      reject(new DOMException('The operation was aborted.', 'AbortError'));
+    };
+    signal.addEventListener('abort', onAbort, { once: true });
+  });
 }
 
 function parseTaskResultItems(rawResult: string): TaskResultItem[] {
@@ -79,11 +102,15 @@ async function buildGenerationBody(
   return body;
 }
 
-async function startGeneration(body: Record<string, unknown>): Promise<string> {
+async function startGeneration(
+  body: Record<string, unknown>,
+  options?: ModalGenerationOptions,
+): Promise<string> {
   const res = await apiFetch('/release_task', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
+    signal: options?.signal,
   });
 
   if (!res.ok) {
@@ -96,21 +123,23 @@ async function startGeneration(body: Record<string, unknown>): Promise<string> {
   if (!taskId) {
     throw new Error(`Generation start failed: ${envelope.error || 'missing task id'}`);
   }
+  options?.onTaskCreated?.(taskId);
   return taskId;
 }
 
 async function pollTaskItems(
   taskId: string,
   onProgress?: (update: ModalProgressUpdate) => void,
+  options?: ModalGenerationOptions,
 ): Promise<TaskResultItem[]> {
   const start = Date.now();
   let lastPollError: string | null = null;
 
   while (Date.now() - start < MAX_WAIT_MS) {
-    await sleep(POLL_INTERVAL_MS);
+    await sleepWithAbort(POLL_INTERVAL_MS, options?.signal);
     let entries;
     try {
-      entries = await queryResult([taskId]);
+      entries = await queryResult([taskId], { signal: options?.signal });
       lastPollError = null;
     } catch (error) {
       lastPollError = error instanceof Error ? error.message : 'query_result failed';
@@ -135,11 +164,14 @@ async function pollTaskItems(
   throw new Error(lastPollError ? `Generation timed out (${lastPollError}).` : 'Generation timed out.');
 }
 
-async function taskItemsToResults(items: TaskResultItem[]): Promise<ModalGenerationResult[]> {
+async function taskItemsToResults(
+  items: TaskResultItem[],
+  options?: ModalGenerationOptions,
+): Promise<ModalGenerationResult[]> {
   const results: ModalGenerationResult[] = [];
   for (const item of items) {
     if (!item.file) continue;
-    const audioBlob = await downloadAudio(item.file);
+    const audioBlob = await downloadAudio(item.file, { signal: options?.signal });
     results.push({
       audioBlob,
       metas: item.metas ?? {},
@@ -157,11 +189,12 @@ export async function generateViaModal(
   srcAudioBlob: Blob | null,
   params: AnyTaskParams | LegoTaskParams,
   onProgress?: (update: ModalProgressUpdate) => void,
+  options?: ModalGenerationOptions,
 ): Promise<ModalGenerationResult> {
   const body = await buildGenerationBody(srcAudioBlob, params);
-  const taskId = await startGeneration(body);
-  const items = await pollTaskItems(taskId, onProgress);
-  const results = await taskItemsToResults(items);
+  const taskId = await startGeneration(body, options);
+  const items = await pollTaskItems(taskId, onProgress, options);
+  const results = await taskItemsToResults(items, options);
   return results[0];
 }
 
@@ -169,11 +202,12 @@ export async function generateBatchViaModal(
   srcAudioBlob: Blob | null,
   params: AnyTaskParams,
   onProgress?: (update: ModalProgressUpdate) => void,
+  options?: ModalGenerationOptions,
 ): Promise<ModalGenerationResult[]> {
   const body = await buildGenerationBody(srcAudioBlob, params);
-  const taskId = await startGeneration(body);
-  const items = await pollTaskItems(taskId, onProgress);
-  return taskItemsToResults(items);
+  const taskId = await startGeneration(body, options);
+  const items = await pollTaskItems(taskId, onProgress, options);
+  return taskItemsToResults(items, options);
 }
 
 export async function modalHealthCheck(): Promise<boolean> {

@@ -15,6 +15,11 @@ import { POLL_INTERVAL_MS, MAX_POLL_DURATION_MS } from '../constants/defaults';
 import { buildLegoPromptContent } from './legoPromptBuilder';
 import { buildRegenerationContextMix } from './regenerationContext';
 import { buildTrackGenerationTextInputs } from '../features/generation/trackLyricsPolicy';
+import {
+  beginClipGeneration,
+  setClipGenerationTaskId,
+  completeClipGeneration,
+} from './clipGenerationCancellation';
 
 const EDGE_FADE_SECONDS = 0.005;
 const MIN_REPAINT_DURATION_SECONDS = 0.1;
@@ -266,6 +271,25 @@ function buildInferredMetas(firstResult: TaskResultItem | null): InferredMetas |
   };
 }
 
+function isAbortError(error: unknown): boolean {
+  return error instanceof DOMException && error.name === 'AbortError';
+}
+
+async function sleepWithAbort(ms: number, signal: AbortSignal): Promise<void> {
+  if (signal.aborted) throw new DOMException('The operation was aborted.', 'AbortError');
+  await new Promise<void>((resolve, reject) => {
+    const timeoutId = setTimeout(() => {
+      signal.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timeoutId);
+      reject(new DOMException('The operation was aborted.', 'AbortError'));
+    };
+    signal.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
 /**
  * Generate all tracks sequentially (bottom → top in generation order).
  */
@@ -454,6 +478,7 @@ async function generateClipCoverInternal(
     updatedAt: now,
   });
   store.updateClipStatus(clipId, 'queued', { generationJobId: jobId });
+  const generationSignal = beginClipGeneration(clipId, jobId);
 
   try {
     const resolvedBpm = clip.bpm === 'auto' ? null : (clip.bpm ?? project.bpm);
@@ -520,6 +545,9 @@ async function generateClipCoverInternal(
           status: 'generating',
           progress: progressText || 'Generating...',
         });
+      }, {
+        signal: generationSignal,
+        onTaskCreated: (taskId) => setClipGenerationTaskId(clipId, jobId, taskId),
       });
       generatedBlob = modalResult.audioBlob;
       if (modalResult.metas && Object.keys(modalResult.metas).length > 0) {
@@ -537,19 +565,20 @@ async function generateClipCoverInternal(
         };
       }
     } else {
-      const releaseResp = await api.releaseTask(coverSourceBlob, params);
+      const releaseResp = await api.releaseTask(coverSourceBlob, params, { signal: generationSignal });
       const taskId = releaseResp.task_id;
+      setClipGenerationTaskId(clipId, jobId, taskId);
 
       const startTime = Date.now();
       let resultAudioPath: string | null = null;
       let lastPollError: string | null = null;
 
       while (Date.now() - startTime < MAX_POLL_DURATION_MS) {
-        await sleep(POLL_INTERVAL_MS);
+        await sleepWithAbort(POLL_INTERVAL_MS, generationSignal);
 
         let entries;
         try {
-          entries = await api.queryResult([taskId]);
+          entries = await api.queryResult([taskId], { signal: generationSignal });
           lastPollError = null;
         } catch (error) {
           lastPollError = error instanceof Error ? error.message : 'query_result failed';
@@ -578,7 +607,7 @@ async function generateClipCoverInternal(
 
       useGenerationStore.getState().updateJob(jobId, { status: 'processing', progress: 'Downloading audio...' });
       useProjectStore.getState().updateClipStatus(clipId, 'processing');
-      generatedBlob = await api.downloadAudio(resultAudioPath);
+      generatedBlob = await api.downloadAudio(resultAudioPath, { signal: generationSignal });
     }
 
     useGenerationStore.getState().updateJob(jobId, { status: 'processing', progress: 'Finalizing clip...' });
@@ -610,9 +639,15 @@ async function generateClipCoverInternal(
 
     useGenerationStore.getState().updateJob(jobId, { status: 'done', progress: 'Done' });
   } catch (error) {
+    if (isAbortError(error)) {
+      useGenerationStore.getState().removeJob(jobId);
+      return;
+    }
     const message = error instanceof Error ? error.message : 'Unknown error';
     useProjectStore.getState().updateClipStatus(clipId, 'error', { errorMessage: message });
     useGenerationStore.getState().updateJob(jobId, { status: 'error', progress: message, error: message });
+  } finally {
+    completeClipGeneration(clipId, jobId);
   }
 }
 
@@ -648,6 +683,7 @@ async function generateClipInternal(
   });
 
   store.updateClipStatus(clipId, 'queued', { generationJobId: jobId });
+  const generationSignal = beginClipGeneration(clipId, jobId);
 
   try {
     // Determine src_audio
@@ -724,6 +760,9 @@ async function generateClipInternal(
           status: 'generating',
           progress: progressText || 'Generating...',
         });
+      }, {
+        signal: generationSignal,
+        onTaskCreated: (taskId) => setClipGenerationTaskId(clipId, jobId, taskId),
       });
       cumulativeBlob = modalResult.audioBlob;
 
@@ -744,8 +783,9 @@ async function generateClipInternal(
       }
     } else {
       // ── Standard API path: async queue ──
-      const releaseResp = await api.releaseLegoTask(srcAudioBlob, params);
+      const releaseResp = await api.releaseLegoTask(srcAudioBlob, params, { signal: generationSignal });
       const taskId = releaseResp.task_id;
+      setClipGenerationTaskId(clipId, jobId, taskId);
 
       // Poll for completion
       const startTime = Date.now();
@@ -753,11 +793,11 @@ async function generateClipInternal(
       let lastPollError: string | null = null;
 
       while (Date.now() - startTime < MAX_POLL_DURATION_MS) {
-        await sleep(POLL_INTERVAL_MS);
+        await sleepWithAbort(POLL_INTERVAL_MS, generationSignal);
 
         let entries;
         try {
-          entries = await api.queryResult([taskId]);
+          entries = await api.queryResult([taskId], { signal: generationSignal });
           lastPollError = null;
         } catch (error) {
           lastPollError = error instanceof Error ? error.message : 'query_result failed';
@@ -788,7 +828,7 @@ async function generateClipInternal(
       useGenerationStore.getState().updateJob(jobId, { status: 'processing', progress: 'Downloading audio...' });
       useProjectStore.getState().updateClipStatus(clipId, 'processing');
 
-      cumulativeBlob = await api.downloadAudio(resultAudioPath);
+      cumulativeBlob = await api.downloadAudio(resultAudioPath, { signal: generationSignal });
     }
 
     // Store cumulative mix
@@ -904,13 +944,15 @@ async function generateClipInternal(
 
     return cumulativeBlob;
   } catch (error) {
+    if (isAbortError(error)) {
+      useGenerationStore.getState().removeJob(jobId);
+      return previousCumulativeBlob;
+    }
     const message = error instanceof Error ? error.message : 'Unknown error';
     useProjectStore.getState().updateClipStatus(clipId, 'error', { errorMessage: message });
     useGenerationStore.getState().updateJob(jobId, { status: 'error', progress: message, error: message });
     return previousCumulativeBlob;
+  } finally {
+    completeClipGeneration(clipId, jobId);
   }
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }

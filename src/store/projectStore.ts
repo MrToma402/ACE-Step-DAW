@@ -16,6 +16,8 @@ import { reorderTracksByTarget } from './trackOrder';
 import { resolveClipMusicalOverrides } from './clipMusicalDefaults';
 import { buildClipMergePlan } from '../features/timeline/clipMergePlan';
 import { buildMergedClipAudio } from '../features/timeline/clipMergeAudio';
+import { useGenerationStore } from './generationStore';
+import { cancelClipGeneration } from '../services/clipGenerationCancellation';
 
 const MIN_TIMELINE_DURATION = 30; // seconds
 const TIMELINE_PADDING = 10;      // seconds beyond last clip
@@ -176,6 +178,8 @@ export const useProjectStore = create<ProjectState>()(
         const removedTrack = state.project.tracks.find((t) => t.id === trackId) ?? null;
         if (removedTrack) {
           for (const clip of removedTrack.clips) {
+            void cancelClipGeneration(clip.id);
+            useGenerationStore.getState().removeJobsForClip(clip.id);
             void deleteAudioBlob(state.project.id, clip.id, 'cumulative');
             void deleteAudioBlob(state.project.id, clip.id, 'isolated');
           }
@@ -342,6 +346,10 @@ export const useProjectStore = create<ProjectState>()(
         const state = get();
         if (!state.project) return;
         const clipExists = state.project.tracks.some((t) => t.clips.some((c) => c.id === clipId));
+        if (clipExists) {
+          void cancelClipGeneration(clipId);
+          useGenerationStore.getState().removeJobsForClip(clipId);
+        }
         if (clipExists) {
           void deleteAudioBlob(state.project.id, clipId, 'cumulative');
           void deleteAudioBlob(state.project.id, clipId, 'isolated');

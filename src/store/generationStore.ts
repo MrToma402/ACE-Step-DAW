@@ -20,6 +20,7 @@ interface GenerationState {
   addJob: (job: GenerationJob) => void;
   updateJob: (jobId: string, updates: Partial<GenerationJob>) => void;
   removeJob: (jobId: string) => void;
+  removeJobsForClip: (clipId: string) => void;
   clearCompletedJobs: () => void;
   setIsGenerating: (v: boolean) => void;
 }
@@ -37,6 +38,9 @@ export const useGenerationStore = create<GenerationState>((set) => ({
 
   removeJob: (jobId) =>
     set((s) => ({ jobs: s.jobs.filter((j) => j.id !== jobId) })),
+
+  removeJobsForClip: (clipId) =>
+    set((s) => ({ jobs: s.jobs.filter((j) => j.clipId !== clipId) })),
 
   clearCompletedJobs: () =>
     set((s) => ({
