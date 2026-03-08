@@ -152,6 +152,9 @@ export function SettingsDialog() {
               </label>
             </div>
           </div>
+          <p className="text-[10px] text-zinc-500">
+            Note: timeline LEGO/Complete clip generation always runs with thinking off (Gradio-aligned).
+          </p>
 
           <div>
             <label className="block text-xs text-zinc-400 mb-1">Model</label>

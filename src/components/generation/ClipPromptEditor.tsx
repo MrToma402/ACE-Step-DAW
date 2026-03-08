@@ -189,6 +189,9 @@ export function ClipPromptEditor() {
               <p className="text-[10px] text-zinc-500 mt-1">
                 LEGO uses the full arrangement context. Complete prioritizes vocal-only reference to build accompaniment.
               </p>
+              <p className="text-[10px] text-zinc-500 mt-1">
+                Thinking is forced off for LEGO/Complete timeline generation (Gradio-aligned behavior).
+              </p>
               {generationTaskType === 'complete' && !hasReadyVocalReference && (
                 <p className="text-[10px] text-amber-400 mt-1">
                   No ready vocal clips found. Complete will fall back to full mix context.
@@ -202,6 +205,9 @@ export function ClipPromptEditor() {
               <div className="w-full px-3 py-1.5 text-sm bg-daw-bg border border-daw-border rounded text-zinc-200">
                 Complete (vocal reference + mixed accompaniment)
               </div>
+              <p className="text-[10px] text-zinc-500 mt-1">
+                Thinking is forced off for LEGO/Complete timeline generation (Gradio-aligned behavior).
+              </p>
             </div>
           )}
 

@@ -845,7 +845,8 @@ async function generateClipInternal(
       shift: project.generationDefaults.shift,
       batch_size: 1,
       audio_format: 'wav' as const,
-      thinking: generationTaskType === 'complete' ? false : project.generationDefaults.thinking,
+      // Keep timeline generation aligned with Gradio task-mode behavior (LEGO/Complete => thinking off).
+      thinking: false,
       model: project.generationDefaults.model || undefined,
     };
     const params: LegoTaskParams | CompleteTaskParams = generationTaskType === 'complete'
