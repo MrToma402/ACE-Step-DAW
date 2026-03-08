@@ -23,13 +23,14 @@ export const TRACK_CATALOG: Record<TrackName, TrackInfo> = {
   woodwinds: { name: 'woodwinds', displayName: 'Woodwinds', emoji: '🎷', color: '#d946ef', defaultOrder: 3, defaultPrompt: 'woodwinds, saxophone, flute, clarinet' },
   backing_vocals: { name: 'backing_vocals', displayName: 'Backing Vocals', emoji: '🎙️', color: '#ec4899', defaultOrder: 2, defaultPrompt: 'backing vocals, harmony vocals, choir' },
   vocals: { name: 'vocals', displayName: 'Vocals', emoji: '🎤', color: '#f43f5e', defaultOrder: 1, defaultPrompt: 'lead vocals, singing voice' },
+  complete: { name: 'complete', displayName: 'Complete', emoji: '🧩', color: '#60a5fa', defaultOrder: 0, defaultPrompt: 'mixed accompaniment bed, leave space for lead vocal' },
   custom: { name: 'custom', displayName: 'Generic', emoji: '🎵', color: '#71717a', defaultOrder: 0, defaultPrompt: '' },
 };
 
 export const TRACK_NAMES: TrackName[] = [
   'drums', 'bass', 'guitar', 'keyboard', 'percussion',
   'strings', 'synth', 'fx', 'brass', 'woodwinds',
-  'backing_vocals', 'vocals', 'custom',
+  'backing_vocals', 'vocals', 'complete',
 ];
 
 export const KEY_SCALES = [

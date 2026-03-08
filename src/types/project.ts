@@ -2,10 +2,13 @@ export type TrackName =
   | 'woodwinds' | 'brass' | 'fx' | 'synth' | 'strings'
   | 'percussion' | 'keyboard' | 'guitar' | 'bass' | 'drums'
   | 'backing_vocals' | 'vocals'
+  | 'complete'
   | 'custom';
 
 export type ClipGenerationStatus =
   | 'empty' | 'queued' | 'generating' | 'processing' | 'ready' | 'error' | 'stale';
+
+export type ClipGenerationTaskType = 'lego' | 'complete';
 
 export interface InferredMetas {
   bpm?: number;
@@ -39,6 +42,7 @@ export interface Clip {
   lockedSeed?: string | null;
   sampleMode?: boolean;
   autoExpandPrompt?: boolean;
+  generationTaskType?: ClipGenerationTaskType;
   // Crop support: original audio duration and offset into it
   audioDuration?: number;  // Full audio buffer duration (set at gen/import)
   audioOffset?: number;    // Offset into audio buffer (seconds), default 0

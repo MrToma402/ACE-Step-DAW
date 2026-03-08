@@ -6,7 +6,7 @@ export interface TrackGenerationTextInputs {
 }
 
 function isVocalTrack(trackName: TrackName): boolean {
-  return trackName === 'vocals' || trackName === 'backing_vocals';
+  return trackName === 'vocals' || trackName === 'backing_vocals' || trackName === 'complete';
 }
 
 /**

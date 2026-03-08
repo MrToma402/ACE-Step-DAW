@@ -6,6 +6,14 @@ import { KEY_SCALES, TIME_SIGNATURES } from '../../constants/tracks';
 import { normalizeSeconds } from '../../utils/time';
 import { isDisposableDraftClip } from '../../features/generation/draftClipCleanup';
 
+function isVocalTrackName(trackName: string): boolean {
+  return trackName === 'vocals' || trackName === 'backing_vocals';
+}
+
+function isCompleteTrackName(trackName: string): boolean {
+  return trackName === 'complete';
+}
+
 export function ClipPromptEditor() {
   const editingClipId = useUIStore((s) => s.editingClipId);
   const setEditingClip = useUIStore((s) => s.setEditingClip);
@@ -25,6 +33,7 @@ export function ClipPromptEditor() {
   const [endTime, setEndTime] = useState(0);
   const [sampleMode, setSampleMode] = useState(false);
   const [autoExpandPrompt, setAutoExpandPrompt] = useState(true);
+  const [generationTaskType, setGenerationTaskType] = useState<'lego' | 'complete'>('lego');
   const [lockedSeed, setLockedSeed] = useState<string | null>(null);
   // 'auto' = ACE-Step infers, null = use project default, number = manual override
   const [overrideBpm, setOverrideBpm] = useState<number | 'auto' | null>(null);
@@ -40,6 +49,7 @@ export function ClipPromptEditor() {
       setEndTime(normalizeSeconds(clip.startTime + clip.duration, 3));
       setSampleMode(clip.sampleMode ?? false);
       setAutoExpandPrompt(clip.autoExpandPrompt ?? true);
+      setGenerationTaskType(clip.generationTaskType ?? 'lego');
       setLockedSeed(clip.lockedSeed ?? null);
       setOverrideBpm(clip.bpm === undefined ? null : clip.bpm);
       setOverrideKey(clip.keyScale === undefined ? null : clip.keyScale);
@@ -48,6 +58,13 @@ export function ClipPromptEditor() {
   }, [editingClipId]);
 
   if (!editingClipId || !clip || !project) return null;
+  const clipTrack = project.tracks.find((track) => track.id === clip.trackId) ?? null;
+  const clipTrackIsVocal = clipTrack ? isVocalTrackName(clipTrack.trackName) : false;
+  const clipTrackIsComplete = clipTrack ? isCompleteTrackName(clipTrack.trackName) : false;
+  const hasReadyVocalReference = project.tracks.some((track) =>
+    isVocalTrackName(track.trackName)
+    && track.clips.some((candidate) => candidate.generationStatus === 'ready' && Boolean(candidate.isolatedAudioKey)),
+  );
 
   const normalizedStart = normalizeSeconds(Math.max(0, startTime), 3);
   const normalizedEnd = normalizeSeconds(Math.max(normalizedStart + 0.5, endTime), 3);
@@ -64,6 +81,7 @@ export function ClipPromptEditor() {
       timeSignature: overrideTimeSig,
       sampleMode,
       autoExpandPrompt,
+      generationTaskType: clipTrackIsVocal ? 'lego' : (clipTrackIsComplete ? 'complete' : generationTaskType),
       lockedSeed,
     });
     setDraftClipId(null);
@@ -81,6 +99,7 @@ export function ClipPromptEditor() {
       timeSignature: overrideTimeSig,
       sampleMode,
       autoExpandPrompt,
+      generationTaskType: clipTrackIsVocal ? 'lego' : (clipTrackIsComplete ? 'complete' : generationTaskType),
       lockedSeed,
     });
     setDraftClipId(null);
@@ -155,6 +174,36 @@ export function ClipPromptEditor() {
               <span className="text-xs text-zinc-400">Auto-expand prompt</span>
             </label>
           </div>
+
+          {!clipTrackIsVocal && !clipTrackIsComplete && (
+            <div>
+              <label className="block text-xs text-zinc-400 mb-1">Generation Mode</label>
+              <select
+                value={generationTaskType}
+                onChange={(e) => setGenerationTaskType(e.target.value as 'lego' | 'complete')}
+                className="w-full px-3 py-1.5 text-sm bg-daw-bg border border-daw-border rounded focus:outline-none focus:border-daw-accent"
+              >
+                <option value="lego">LEGO (full mix context)</option>
+                <option value="complete">Complete (vocal reference)</option>
+              </select>
+              <p className="text-[10px] text-zinc-500 mt-1">
+                LEGO uses the full arrangement context. Complete prioritizes vocal-only reference to build accompaniment.
+              </p>
+              {generationTaskType === 'complete' && !hasReadyVocalReference && (
+                <p className="text-[10px] text-amber-400 mt-1">
+                  No ready vocal clips found. Complete will fall back to full mix context.
+                </p>
+              )}
+            </div>
+          )}
+          {clipTrackIsComplete && (
+            <div>
+              <label className="block text-xs text-zinc-400 mb-1">Generation Mode</label>
+              <div className="w-full px-3 py-1.5 text-sm bg-daw-bg border border-daw-border rounded text-zinc-200">
+                Complete (vocal reference + mixed accompaniment)
+              </div>
+            </div>
+          )}
 
           <div>
             <label className="block text-xs text-zinc-400 mb-1">

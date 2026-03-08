@@ -14,6 +14,7 @@ export interface BaseTaskParams {
   task_type: TaskType;
   prompt: string;
   lyrics: string;
+  instruction?: string;
   audio_duration: number;
   bpm: number | null;           // null = ACE-Step auto-infers
   key_scale: string;            // "" = ACE-Step auto-infers
@@ -24,7 +25,7 @@ export interface BaseTaskParams {
   batch_size: number;
   audio_format: 'wav' | 'mp3';
   thinking: boolean;
-  model: string;                // DiT model: turbo (default), sft, base, turbo-shift1, turbo-shift3
+  model?: string;               // DiT model: turbo (default), sft, base, turbo-shift1, turbo-shift3
   sample_mode?: boolean;
   sample_query?: string;
   use_format?: boolean;
@@ -45,6 +46,7 @@ export interface BaseTaskParams {
   // Audio control
   audio_cover_strength?: number; // 0.0-1.0, controls how closely to follow source audio (Cover mode)
   vocal_language?: string;       // vocal language hint
+  track_classes?: string[];      // used by complete mode to specify accompaniment classes
 
   // Advanced DiT params
   use_adg?: boolean;            // Adaptive Dual Guidance (Base model only)

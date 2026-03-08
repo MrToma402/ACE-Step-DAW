@@ -1,8 +1,13 @@
 import { v4 as uuidv4 } from 'uuid';
 import { useProjectStore } from '../store/projectStore';
 import { useGenerationStore } from '../store/generationStore';
-import type { CoverTaskParams, LegoTaskParams, TaskResultItem } from '../types/api';
-import type { InferredMetas } from '../types/project';
+import type {
+  CompleteTaskParams,
+  CoverTaskParams,
+  LegoTaskParams,
+  TaskResultItem,
+} from '../types/api';
+import type { ClipGenerationTaskType, InferredMetas, Project } from '../types/project';
 import * as api from './aceStepApi';
 import { generateViaModal } from './modalApi';
 import { generateSilenceWav } from './silenceGenerator';
@@ -44,6 +49,7 @@ const WAVE_SUBTRACTION_DECORRELATION_THRESHOLD = 0.65;
 const WAVE_SUBTRACTION_MAX_DECORRELATION = 0.3;
 const WAVE_SUBTRACTION_ORTHOGONALIZE_RESIDUAL = false;
 const WAVE_SUBTRACTION_ORTHOGONALIZE_CAP = 0.18;
+const COMPLETE_DEFAULT_TRACK_CLASSES = ['drums', 'bass', 'guitar', 'keyboard', 'strings', 'synth', 'percussion'];
 
 async function buildLegoSourceAudio(
   previousCumulativeBlob: Blob | null,
@@ -84,6 +90,122 @@ async function buildLegoSourceAudio(
 
 function getClipEndTime(clip: { startTime: number; duration: number }): number {
   return clip.startTime + clip.duration;
+}
+
+function resolveClipGenerationTaskType(value: ClipGenerationTaskType | undefined): ClipGenerationTaskType {
+  return value === 'complete' ? 'complete' : 'lego';
+}
+
+function isVocalTrackName(trackName: string): boolean {
+  return trackName === 'vocals' || trackName === 'backing_vocals';
+}
+
+async function buildCompleteReferenceContext(
+  project: Project,
+  clipId: string,
+  _desiredContextEndTime: number | null,
+): Promise<{ blob: Blob | null; endTime: number | null; warningMessage: string | null }> {
+  const clipById = new Map<string, Project['tracks'][number]['clips'][number]>();
+  for (const track of project.tracks) {
+    for (const clip of track.clips) {
+      clipById.set(clip.id, clip);
+    }
+  }
+  const targetClip = clipById.get(clipId) ?? null;
+  if (!targetClip) {
+    return { blob: null, endTime: null, warningMessage: null };
+  }
+
+  const targetStart = targetClip.startTime;
+  const targetEnd = targetClip.startTime + Math.max(0, targetClip.duration);
+  const targetDuration = Math.max(0, targetEnd - targetStart);
+  if (targetDuration <= 0) {
+    return { blob: null, endTime: null, warningMessage: null };
+  }
+
+  const vocalCandidates: Array<{
+    clipId: string;
+    startTime: number;
+    endTime: number;
+    audioOffset: number;
+    isolatedAudioKey: string;
+  }> = [];
+  for (const track of project.tracks) {
+    if (!isVocalTrackName(track.trackName) || track.hidden) continue;
+    for (const clip of track.clips) {
+      if (clip.id === clipId) continue;
+      if (clip.generationStatus !== 'ready' || !clip.isolatedAudioKey) continue;
+      const clipStart = clip.startTime;
+      const clipEnd = clip.startTime + Math.max(0, clip.duration);
+      if (clipEnd <= targetStart || clipStart >= targetEnd) continue;
+      vocalCandidates.push({
+        clipId: clip.id,
+        startTime: clipStart,
+        endTime: clipEnd,
+        audioOffset: Math.max(0, clip.audioOffset ?? 0),
+        isolatedAudioKey: clip.isolatedAudioKey,
+      });
+    }
+  }
+  if (vocalCandidates.length === 0) {
+    return { blob: null, endTime: null, warningMessage: null };
+  }
+
+  const engine = getAudioEngine();
+  const sampleRate = engine.ctx.sampleRate || 48000;
+  const renderLength = Math.max(1, Math.ceil(targetDuration * sampleRate));
+  const offlineCtx = new OfflineAudioContext(2, renderLength, sampleRate);
+  const masterGain = offlineCtx.createGain();
+  masterGain.connect(offlineCtx.destination);
+
+  let usableSourceCount = 0;
+  let skippedSourceCount = 0;
+  for (const source of vocalCandidates) {
+    const blob = await loadAudioBlobByKey(source.isolatedAudioKey);
+    if (!blob) continue;
+    try {
+      const decoded = await engine.decodeAudioData(blob);
+      const overlapStart = Math.max(targetStart, source.startTime);
+      const overlapEnd = Math.min(targetEnd, source.endTime);
+      const overlapDuration = Math.max(0, overlapEnd - overlapStart);
+      if (overlapDuration <= 0) continue;
+
+      const sourceOffset = source.audioOffset + Math.max(0, overlapStart - source.startTime);
+      const availableDuration = Math.max(0, decoded.duration - sourceOffset);
+      const playDuration = Math.min(overlapDuration, availableDuration);
+      if (playDuration <= 0) continue;
+
+      const outputStart = Math.max(0, overlapStart - targetStart);
+      const bufferSource = offlineCtx.createBufferSource();
+      bufferSource.buffer = decoded;
+      const gainNode = offlineCtx.createGain();
+      gainNode.gain.value = 1;
+      bufferSource.connect(gainNode);
+      gainNode.connect(masterGain);
+      bufferSource.start(outputStart, sourceOffset, playDuration);
+      usableSourceCount += 1;
+    } catch {
+      skippedSourceCount += 1;
+    }
+  }
+
+  if (usableSourceCount === 0) {
+    const warningMessage = skippedSourceCount > 0
+      ? `Warning: ${skippedSourceCount} vocal reference clip(s) could not be decoded. Falling back to full context.`
+      : null;
+    return { blob: null, endTime: null, warningMessage };
+  }
+
+  const rendered = await offlineCtx.startRendering();
+  limitBufferPeak(rendered, 0.98);
+  const warningMessage = skippedSourceCount > 0
+    ? `Warning: skipped ${skippedSourceCount} broken vocal reference clip(s).`
+    : null;
+  return {
+    blob: audioBufferToWavBlob(rendered),
+    endTime: targetDuration,
+    warningMessage,
+  };
 }
 
 interface RepaintRangeOverrides {
@@ -361,11 +483,18 @@ export async function generateSingleClip(clipId: string): Promise<void> {
   try {
     const { project } = useProjectStore.getState();
     const targetClip = project ? useProjectStore.getState().getClipById(clipId) : null;
+    const taskType = resolveClipGenerationTaskType(targetClip?.generationTaskType);
     const contextEndTime = targetClip
       ? targetClip.startTime + Math.max(0, targetClip.duration)
       : null;
     const context = project
-      ? await buildRegenerationContextMix(project, clipId, contextEndTime)
+      ? taskType === 'complete'
+        ? await (async () => {
+          const vocalContext = await buildCompleteReferenceContext(project, clipId, contextEndTime);
+          if (vocalContext.blob) return vocalContext;
+          return buildRegenerationContextMix(project, clipId, contextEndTime);
+        })()
+        : await buildRegenerationContextMix(project, clipId, contextEndTime)
       : { blob: null, endTime: null, warningMessage: null };
     if (context.warningMessage && typeof window !== 'undefined') {
       window.alert(context.warningMessage);
@@ -388,11 +517,22 @@ export async function generateSingleClipRepaint(
   try {
     const { project } = useProjectStore.getState();
     const targetClip = project ? useProjectStore.getState().getClipById(clipId) : null;
+    const taskType = resolveClipGenerationTaskType(targetClip?.generationTaskType);
     const repaintingBounds = targetClip
       ? resolveRepaintingBounds(targetClip, { startTime: repaintStartTime, endTime: repaintEndTime })
       : null;
     const context = project
-      ? await buildRegenerationContextMix(project, clipId, repaintingBounds?.endTime ?? null)
+      ? taskType === 'complete'
+        ? await (async () => {
+          const vocalContext = await buildCompleteReferenceContext(
+            project,
+            clipId,
+            repaintingBounds?.endTime ?? null,
+          );
+          if (vocalContext.blob) return vocalContext;
+          return buildRegenerationContextMix(project, clipId, repaintingBounds?.endTime ?? null);
+        })()
+        : await buildRegenerationContextMix(project, clipId, repaintingBounds?.endTime ?? null)
       : { blob: null, endTime: null, warningMessage: null };
     if (context.warningMessage && typeof window !== 'undefined') {
       window.alert(context.warningMessage);
@@ -686,12 +826,25 @@ async function generateClipInternal(
   const generationSignal = beginClipGeneration(clipId, jobId);
 
   try {
+    const generationTaskType = resolveClipGenerationTaskType(clip.generationTaskType);
+
     // Determine src_audio
-    const srcAudioBlob = await buildLegoSourceAudio(
+    let srcAudioBlob = await buildLegoSourceAudio(
       previousCumulativeBlob,
       previousContextEnd,
       project.totalDuration,
     );
+    if (generationTaskType === 'complete') {
+      const engine = getAudioEngine();
+      const referenceBuffer = await engine.decodeAudioData(srcAudioBlob);
+      const clippedReference = extractClipBufferFromTimeline(
+        engine.ctx,
+        referenceBuffer,
+        clip.startTime,
+        clip.duration,
+      );
+      srcAudioBlob = audioBufferToWavBlob(clippedReference);
+    }
 
     // Build params — 'auto' = ACE-Step infers, null/undefined = project defaults, value = manual
     const resolvedBpm = clip.bpm === 'auto' ? null : (clip.bpm ?? project.bpm);
@@ -701,21 +854,19 @@ async function generateClipInternal(
       clip,
       track,
     });
+    const effectiveLyricsForTask = generationTaskType === 'complete'
+      ? (clip.lyrics.trim().length > 0 ? clip.lyrics : '[Instrumental]')
+      : clip.lyrics;
     const generationTextInputs = buildTrackGenerationTextInputs(
       track.trackName,
-      clip.lyrics,
+      effectiveLyricsForTask,
       legoPrompt.instruction,
     );
 
-    const params: LegoTaskParams = {
-      task_type: 'lego',
-      track_name: track.trackName,
+    const baseParams = {
       prompt: legoPrompt.prompt,
       lyrics: generationTextInputs.lyrics,
-      instruction: generationTextInputs.instruction,
-      repainting_start: repaintingBounds.startTime,
-      repainting_end: repaintingBounds.endTime,
-      audio_duration: project.totalDuration,
+      audio_duration: generationTaskType === 'complete' ? clip.duration : project.totalDuration,
       bpm: resolvedBpm,
       key_scale: resolvedKey,
       time_signature: resolvedTimeSig,
@@ -723,10 +874,27 @@ async function generateClipInternal(
       guidance_scale: project.generationDefaults.guidanceScale,
       shift: project.generationDefaults.shift,
       batch_size: 1,
-      audio_format: 'wav',
-      thinking: project.generationDefaults.thinking,
+      audio_format: 'wav' as const,
+      thinking: generationTaskType === 'complete' ? false : project.generationDefaults.thinking,
       model: project.generationDefaults.model || undefined,
-    } as LegoTaskParams;
+    };
+    const params: LegoTaskParams | CompleteTaskParams = generationTaskType === 'complete'
+      ? {
+        ...baseParams,
+        task_type: 'complete',
+        track_classes: COMPLETE_DEFAULT_TRACK_CLASSES,
+        use_cot_caption: false,
+        use_cot_metas: false,
+        use_cot_language: false,
+      }
+      : {
+        ...baseParams,
+        task_type: 'lego',
+        track_name: track.trackName,
+        instruction: generationTextInputs.instruction,
+        repainting_start: repaintingBounds.startTime,
+        repainting_end: repaintingBounds.endTime,
+      };
 
     const lockedSeed = clip.lockedSeed?.trim();
     if (lockedSeed) {
@@ -783,7 +951,7 @@ async function generateClipInternal(
       }
     } else {
       // ── Standard API path: async queue ──
-      const releaseResp = await api.releaseLegoTask(srcAudioBlob, params, { signal: generationSignal });
+      const releaseResp = await api.releaseTask(srcAudioBlob, params, { signal: generationSignal });
       const taskId = releaseResp.task_id;
       setClipGenerationTaskId(clipId, jobId, taskId);
 
@@ -834,50 +1002,55 @@ async function generateClipInternal(
     // Store cumulative mix
     const cumulativeKey = await saveAudioBlob(project.id, clipId, 'cumulative', cumulativeBlob);
 
-    // Wave subtraction: isolate this track
+    // Wave subtraction: isolate this track.
+    // For `complete`, keep the generated mix directly to avoid subtraction artifacts.
     const engine = getAudioEngine();
     const cumulativeBuffer = await engine.decodeAudioData(cumulativeBlob);
 
     let previousBuffer: AudioBuffer | null = null;
-    if (previousCumulativeBlob) {
+    if (generationTaskType !== 'complete' && previousCumulativeBlob) {
       // Use the same sanitized context that was fed to LEGO. This keeps
       // subtraction stable in regions beyond real context coverage.
       previousBuffer = await engine.decodeAudioData(srcAudioBlob);
     }
 
-    const fullIsolatedBuffer = isolateTrackAudio(engine.ctx, cumulativeBuffer, previousBuffer, {
-      alpha: WAVE_SUBTRACTION_ALPHA,
-      gainMatch: WAVE_SUBTRACTION_GAIN_MATCH,
-      minGainCompensation: WAVE_SUBTRACTION_MIN_GAIN,
-      maxGainCompensation: WAVE_SUBTRACTION_MAX_GAIN,
-      adaptiveAlpha: WAVE_SUBTRACTION_ADAPTIVE_ALPHA,
-      adaptiveAlphaFloor: WAVE_SUBTRACTION_ADAPTIVE_FLOOR,
-      correlationSampleStride: WAVE_SUBTRACTION_CORRELATION_STRIDE,
-      lagCompensation: WAVE_SUBTRACTION_LAG_COMPENSATION,
-      maxLagSamples: WAVE_SUBTRACTION_MAX_LAG_SAMPLES,
-      bleedGate: WAVE_SUBTRACTION_BLEED_GATE,
-      bleedGateThreshold: WAVE_SUBTRACTION_BLEED_GATE_THRESHOLD,
-      bleedCorrelationThreshold: WAVE_SUBTRACTION_BLEED_CORRELATION_THRESHOLD,
-      blockSize: WAVE_SUBTRACTION_BLOCK_SIZE,
-      blockHop: WAVE_SUBTRACTION_BLOCK_HOP,
-      decorrelateResidual: WAVE_SUBTRACTION_DECORRELATE_RESIDUAL,
-      decorrelationThreshold: WAVE_SUBTRACTION_DECORRELATION_THRESHOLD,
-      maxDecorrelation: WAVE_SUBTRACTION_MAX_DECORRELATION,
-      orthogonalizeResidual: WAVE_SUBTRACTION_ORTHOGONALIZE_RESIDUAL,
-      orthogonalizeCap: WAVE_SUBTRACTION_ORTHOGONALIZE_CAP,
-    });
+    const fullIsolatedBuffer = generationTaskType === 'complete'
+      ? cumulativeBuffer
+      : isolateTrackAudio(engine.ctx, cumulativeBuffer, previousBuffer, {
+        alpha: WAVE_SUBTRACTION_ALPHA,
+        gainMatch: WAVE_SUBTRACTION_GAIN_MATCH,
+        minGainCompensation: WAVE_SUBTRACTION_MIN_GAIN,
+        maxGainCompensation: WAVE_SUBTRACTION_MAX_GAIN,
+        adaptiveAlpha: WAVE_SUBTRACTION_ADAPTIVE_ALPHA,
+        adaptiveAlphaFloor: WAVE_SUBTRACTION_ADAPTIVE_FLOOR,
+        correlationSampleStride: WAVE_SUBTRACTION_CORRELATION_STRIDE,
+        lagCompensation: WAVE_SUBTRACTION_LAG_COMPENSATION,
+        maxLagSamples: WAVE_SUBTRACTION_MAX_LAG_SAMPLES,
+        bleedGate: WAVE_SUBTRACTION_BLEED_GATE,
+        bleedGateThreshold: WAVE_SUBTRACTION_BLEED_GATE_THRESHOLD,
+        bleedCorrelationThreshold: WAVE_SUBTRACTION_BLEED_CORRELATION_THRESHOLD,
+        blockSize: WAVE_SUBTRACTION_BLOCK_SIZE,
+        blockHop: WAVE_SUBTRACTION_BLOCK_HOP,
+        decorrelateResidual: WAVE_SUBTRACTION_DECORRELATE_RESIDUAL,
+        decorrelationThreshold: WAVE_SUBTRACTION_DECORRELATION_THRESHOLD,
+        maxDecorrelation: WAVE_SUBTRACTION_MAX_DECORRELATION,
+        orthogonalizeResidual: WAVE_SUBTRACTION_ORTHOGONALIZE_RESIDUAL,
+        orthogonalizeCap: WAVE_SUBTRACTION_ORTHOGONALIZE_CAP,
+      });
 
     // Re-read clip from store in case the user moved/resized it during generation
     const currentClip = useProjectStore.getState().getClipById(clipId);
     const clipStart = currentClip?.startTime ?? clip.startTime;
     const clipDuration = currentClip?.duration ?? clip.duration;
 
-    const fullClipBuffer = extractClipBufferFromTimeline(
-      engine.ctx,
-      fullIsolatedBuffer,
-      clipStart,
-      clipDuration,
-    );
+    const fullClipBuffer = generationTaskType === 'complete'
+      ? fitBufferToDuration(engine.ctx, fullIsolatedBuffer, clipDuration)
+      : extractClipBufferFromTimeline(
+        engine.ctx,
+        fullIsolatedBuffer,
+        clipStart,
+        clipDuration,
+      );
     let finalClipBuffer = fullClipBuffer;
     let repaintFallbackNotice: string | null = null;
 

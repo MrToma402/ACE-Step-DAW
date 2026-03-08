@@ -233,6 +233,8 @@ export const useProjectStore = create<ProjectState>()(
         const state = get();
         if (!state.project) throw new Error('No project');
         const musicalOverrides = resolveClipMusicalOverrides(clipData);
+        const track = state.project.tracks.find((item) => item.id === trackId);
+        const defaultTaskType = track?.trackName === 'complete' ? 'complete' : 'lego';
 
         const clip: Clip = {
           id: uuidv4(),
@@ -251,6 +253,7 @@ export const useProjectStore = create<ProjectState>()(
           bpm: musicalOverrides.bpm,
           keyScale: musicalOverrides.keyScale,
           timeSignature: musicalOverrides.timeSignature,
+          generationTaskType: defaultTaskType,
         };
 
         const newTracks = state.project.tracks.map((t) =>
