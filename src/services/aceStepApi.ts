@@ -4,6 +4,7 @@ import type {
   ApiEnvelope,
   ReleaseTaskResponse,
   TaskResultEntry,
+  TaskResultItem,
   ModelsListResponse,
   StatsResponse,
 } from '../types/api';
@@ -12,9 +13,33 @@ import { apiFetch, buildApiUrl, withApiHeaders } from './apiClient';
 const QUERY_TIMEOUT_MS = 15000;
 const DOWNLOAD_TIMEOUT_MS = 120000;
 const DOWNLOAD_RETRIES = 3;
+const GENERATE_POLL_INTERVAL_MS = 1500;
+const GENERATE_MAX_WAIT_MS = 10 * 60 * 1000;
 
 interface RequestOptions {
   signal?: AbortSignal;
+}
+
+interface GenerateTaskOptions extends RequestOptions {
+  onProgress?: (progressText: string) => void;
+  maxWaitMs?: number;
+  pollIntervalMs?: number;
+}
+
+export interface GeneratedTaskAudio {
+  audioBlob: Blob;
+  metas: TaskResultItem['metas'];
+  seed_value?: string;
+  dit_model?: string;
+}
+
+export interface LoraInfo {
+  name: string;
+  has_weights: boolean;
+  created_at?: string;
+  epochs?: number;
+  rank?: number;
+  num_files?: number;
 }
 
 function isAbortError(error: unknown): boolean {
@@ -41,6 +66,33 @@ async function fetchWithTimeout(
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function sleepWithAbort(ms: number, signal?: AbortSignal): Promise<void> {
+  if (!signal) return sleep(ms);
+  if (signal.aborted) {
+    throw new DOMException('The operation was aborted.', 'AbortError');
+  }
+  return new Promise((resolve, reject) => {
+    const timeoutId = setTimeout(() => {
+      signal.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timeoutId);
+      reject(new DOMException('The operation was aborted.', 'AbortError'));
+    };
+    signal.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
+function parseTaskResultItems(rawResult: string): TaskResultItem[] {
+  try {
+    const parsed = JSON.parse(rawResult) as unknown;
+    return Array.isArray(parsed) ? (parsed as TaskResultItem[]) : [];
+  } catch {
+    return [];
+  }
 }
 
 export async function healthCheck(): Promise<boolean> {
@@ -84,7 +136,7 @@ export async function releaseTask(
   if (srcAudioBlob && srcAudioBlob.size > 0) {
     // Add the audio file
     formData.append('src_audio', srcAudioBlob, 'src_audio.wav');
-    // Keep parity with JSON modal path for cover tasks.
+    // Cover uses the same blob for source and reference conditioning.
     if (params.task_type === 'cover') {
       formData.append('reference_audio', srcAudioBlob, 'reference_audio.wav');
     }
@@ -93,6 +145,13 @@ export async function releaseTask(
   // Add all params as form fields (skip null values — ACE-Step auto-infers them)
   for (const [key, value] of Object.entries(params)) {
     if (value === null || value === undefined) continue;
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        if (item === null || item === undefined) continue;
+        formData.append(key, String(item));
+      }
+      continue;
+    }
     formData.append(key, String(value));
   }
 
@@ -202,4 +261,101 @@ export async function downloadAudio(audioPath: string, options?: RequestOptions)
     throw new Error('downloadAudio timed out');
   }
   throw lastError instanceof Error ? lastError : new Error('downloadAudio failed');
+}
+
+export async function generateTask(
+  srcAudioBlob: Blob | null,
+  params: AnyTaskParams | LegoTaskParams,
+  options?: GenerateTaskOptions,
+): Promise<GeneratedTaskAudio> {
+  const results = await generateTaskBatch(srcAudioBlob, params, options);
+  const first = results[0];
+  if (!first) throw new Error('Generation completed but returned no outputs.');
+  return first;
+}
+
+export async function generateTaskBatch(
+  srcAudioBlob: Blob | null,
+  params: AnyTaskParams | LegoTaskParams,
+  options?: GenerateTaskOptions,
+): Promise<GeneratedTaskAudio[]> {
+  const releaseResp = await releaseTask(srcAudioBlob, params, { signal: options?.signal });
+  const taskId = releaseResp.task_id;
+  const start = Date.now();
+  const maxWaitMs = options?.maxWaitMs ?? GENERATE_MAX_WAIT_MS;
+  const pollIntervalMs = options?.pollIntervalMs ?? GENERATE_POLL_INTERVAL_MS;
+  let lastPollError: string | null = null;
+
+  while (Date.now() - start < maxWaitMs) {
+    await sleepWithAbort(pollIntervalMs, options?.signal);
+    let entries;
+    try {
+      entries = await queryResult([taskId], { signal: options?.signal });
+      lastPollError = null;
+    } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
+      lastPollError = error instanceof Error ? error.message : 'query_result failed';
+      continue;
+    }
+
+    const entry = entries?.[0];
+    if (!entry) continue;
+    options?.onProgress?.(entry.progress_text || 'Generating...');
+
+    if (entry.status === 2) {
+      throw new Error(`Generation failed: ${entry.result}`);
+    }
+    if (entry.status !== 1) continue;
+
+    const resultItems = parseTaskResultItems(entry.result);
+    if (resultItems.length === 0) {
+      throw new Error('Generation completed but returned no outputs.');
+    }
+
+    const results: GeneratedTaskAudio[] = [];
+    for (const item of resultItems) {
+      if (!item.file) continue;
+      const audioBlob = await downloadAudio(item.file, { signal: options?.signal });
+      results.push({
+        audioBlob,
+        metas: item.metas ?? {},
+        seed_value: item.seed_value,
+        dit_model: item.dit_model,
+      });
+    }
+    if (results.length === 0) {
+      throw new Error('No downloadable audio outputs were returned.');
+    }
+    return results;
+  }
+
+  throw new Error(lastPollError ? `Generation timed out (${lastPollError}).` : 'Generation timed out.');
+}
+
+export async function listLoras(): Promise<LoraInfo[]> {
+  try {
+    const res = await apiFetch('/v1/lora/status', { method: 'GET' });
+    if (!res.ok) return [];
+    const json = await res.json() as ApiEnvelope<Record<string, unknown>>;
+    const data = json.data ?? {};
+    const adapters = data.adapters;
+    if (Array.isArray(adapters)) {
+      return adapters
+        .map((entry) => (typeof entry === 'string'
+          ? { name: entry, has_weights: true } as LoraInfo
+          : null))
+        .filter((entry): entry is LoraInfo => entry !== null);
+    }
+    if (adapters && typeof adapters === 'object') {
+      return Object.keys(adapters as Record<string, unknown>).map((name) => ({
+        name,
+        has_weights: true,
+      }));
+    }
+    return [];
+  } catch {
+    return [];
+  }
 }

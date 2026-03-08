@@ -12,7 +12,6 @@ export const DEFAULT_GENERATION: GenerationDefaults = {
   shift: 3.0,
   thinking: true,
   model: '',
-  useModal: true,
 };
 
 export const MIN_BPM = 30;

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { generateViaModal, generateBatchViaModal, listLoras } from '../../services/modalApi';
-import type { LoraInfo } from '../../services/modalApi';
+import { generateTask, generateTaskBatch, listLoras } from '../../services/aceStepApi';
+import type { LoraInfo } from '../../services/aceStepApi';
 import { useProjectStore } from '../../store/projectStore';
 import { useLoraStore } from '../../store/loraStore';
 import { useComposerStore, loadOutputBlob } from '../../store/composerStore';
@@ -155,7 +155,7 @@ export function ComposerView() {
 
             if (batchSize > 1) {
                 setProgress(`Generating ${batchSize} variations...`);
-                const results = await generateBatchViaModal(srcBlob, params);
+                const results = await generateTaskBatch(srcBlob, params);
                 for (let i = 0; i < results.length; i++) {
                     const id = `${Date.now()}-${i}`;
                     const name = `${mode}_${i + 1}.${audioFormat}`;
@@ -166,7 +166,7 @@ export function ComposerView() {
                 }
             } else {
                 setProgress('Generating...');
-                const result = await generateViaModal(srcBlob, params);
+                const result = await generateTask(srcBlob, params);
                 const id = `${Date.now()}`;
                 const name = `${mode}_${Date.now()}.${audioFormat}`;
                 await addOutputToStore(

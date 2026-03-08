@@ -9,7 +9,6 @@ import type {
 } from '../types/api';
 import type { ClipGenerationTaskType, InferredMetas, Project } from '../types/project';
 import * as api from './aceStepApi';
-import { generateViaModal } from './modalApi';
 import { generateSilenceWav } from './silenceGenerator';
 import { saveAudioBlob, loadAudioBlobByKey } from './audioFileManager';
 import { getAudioEngine } from '../hooks/useAudioEngine';
@@ -677,78 +676,49 @@ async function generateClipCoverInternal(
 
     let generatedBlob: Blob;
     let firstResult: TaskResultItem | null = null;
+    const releaseResp = await api.releaseTask(coverSourceBlob, params, { signal: generationSignal });
+    const taskId = releaseResp.task_id;
+    setClipGenerationTaskId(clipId, jobId, taskId);
 
-    if (project.generationDefaults.useModal ?? true) {
-      useGenerationStore.getState().updateJob(jobId, { progress: 'Generating cover...' });
-      const modalResult = await generateViaModal(coverSourceBlob, params, ({ progressText }) => {
-        useGenerationStore.getState().updateJob(jobId, {
-          status: 'generating',
-          progress: progressText || 'Generating...',
-        });
-      }, {
-        signal: generationSignal,
-        onTaskCreated: (taskId) => setClipGenerationTaskId(clipId, jobId, taskId),
+    const startTime = Date.now();
+    let resultAudioPath: string | null = null;
+    let lastPollError: string | null = null;
+
+    while (Date.now() - startTime < MAX_POLL_DURATION_MS) {
+      await sleepWithAbort(POLL_INTERVAL_MS, generationSignal);
+
+      let entries;
+      try {
+        entries = await api.queryResult([taskId], { signal: generationSignal });
+        lastPollError = null;
+      } catch (error) {
+        lastPollError = error instanceof Error ? error.message : 'query_result failed';
+        continue;
+      }
+      const entry = entries?.[0];
+      if (!entry) continue;
+
+      useGenerationStore.getState().updateJob(jobId, {
+        progress: entry.progress_text || 'Generating...',
       });
-      generatedBlob = modalResult.audioBlob;
-      if (modalResult.metas && Object.keys(modalResult.metas).length > 0) {
-        firstResult = {
-          file: '',
-          wave: '',
-          status: 1,
-          create_time: Date.now(),
-          env: 'modal',
-          prompt: effectivePrompt,
-          lyrics: effectiveLyrics,
-          metas: modalResult.metas,
-          seed_value: modalResult.seed_value,
-          dit_model: modalResult.dit_model,
-        };
+
+      if (entry.status === 1) {
+        const resultItems: TaskResultItem[] = JSON.parse(entry.result);
+        firstResult = resultItems?.[0] ?? null;
+        resultAudioPath = firstResult?.file ?? null;
+        break;
+      } else if (entry.status === 2) {
+        throw new Error(`Generation failed: ${entry.result}`);
       }
-    } else {
-      const releaseResp = await api.releaseTask(coverSourceBlob, params, { signal: generationSignal });
-      const taskId = releaseResp.task_id;
-      setClipGenerationTaskId(clipId, jobId, taskId);
-
-      const startTime = Date.now();
-      let resultAudioPath: string | null = null;
-      let lastPollError: string | null = null;
-
-      while (Date.now() - startTime < MAX_POLL_DURATION_MS) {
-        await sleepWithAbort(POLL_INTERVAL_MS, generationSignal);
-
-        let entries;
-        try {
-          entries = await api.queryResult([taskId], { signal: generationSignal });
-          lastPollError = null;
-        } catch (error) {
-          lastPollError = error instanceof Error ? error.message : 'query_result failed';
-          continue;
-        }
-        const entry = entries?.[0];
-        if (!entry) continue;
-
-        useGenerationStore.getState().updateJob(jobId, {
-          progress: entry.progress_text || 'Generating...',
-        });
-
-        if (entry.status === 1) {
-          const resultItems: TaskResultItem[] = JSON.parse(entry.result);
-          firstResult = resultItems?.[0] ?? null;
-          resultAudioPath = firstResult?.file ?? null;
-          break;
-        } else if (entry.status === 2) {
-          throw new Error(`Generation failed: ${entry.result}`);
-        }
-      }
-
-      if (!resultAudioPath) {
-        throw new Error(lastPollError ? `Generation timed out (${lastPollError})` : 'Generation timed out');
-      }
-
-      useGenerationStore.getState().updateJob(jobId, { status: 'processing', progress: 'Downloading audio...' });
-      useProjectStore.getState().updateClipStatus(clipId, 'processing');
-      generatedBlob = await api.downloadAudio(resultAudioPath, { signal: generationSignal });
     }
+
+    if (!resultAudioPath) {
+      throw new Error(lastPollError ? `Generation timed out (${lastPollError})` : 'Generation timed out');
+    }
+
+    useGenerationStore.getState().updateJob(jobId, { status: 'processing', progress: 'Downloading audio...' });
+    useProjectStore.getState().updateClipStatus(clipId, 'processing');
+    generatedBlob = await api.downloadAudio(resultAudioPath, { signal: generationSignal });
 
     useGenerationStore.getState().updateJob(jobId, { status: 'processing', progress: 'Finalizing clip...' });
     useProjectStore.getState().updateClipStatus(clipId, 'processing');
@@ -919,85 +889,53 @@ async function generateClipInternal(
     let cumulativeBlob: Blob;
     let firstResult: TaskResultItem | null = null;
 
-    if (project.generationDefaults.useModal ?? true) {
-      // ── Fast JSON submission path ──
-      useGenerationStore.getState().updateJob(jobId, { progress: 'Generating (this may take a minute)...' });
+    // ── Standard API path: async queue ──
+    const releaseResp = await api.releaseTask(srcAudioBlob, params, { signal: generationSignal });
+    const taskId = releaseResp.task_id;
+    setClipGenerationTaskId(clipId, jobId, taskId);
 
-      const modalResult = await generateViaModal(srcAudioBlob, params, ({ progressText }) => {
-        useGenerationStore.getState().updateJob(jobId, {
-          status: 'generating',
-          progress: progressText || 'Generating...',
-        });
-      }, {
-        signal: generationSignal,
-        onTaskCreated: (taskId) => setClipGenerationTaskId(clipId, jobId, taskId),
+    // Poll for completion
+    const startTime = Date.now();
+    let resultAudioPath: string | null = null;
+    let lastPollError: string | null = null;
+
+    while (Date.now() - startTime < MAX_POLL_DURATION_MS) {
+      await sleepWithAbort(POLL_INTERVAL_MS, generationSignal);
+
+      let entries;
+      try {
+        entries = await api.queryResult([taskId], { signal: generationSignal });
+        lastPollError = null;
+      } catch (error) {
+        lastPollError = error instanceof Error ? error.message : 'query_result failed';
+        continue;
+      }
+      const entry = entries?.[0];
+      if (!entry) continue;
+
+      useGenerationStore.getState().updateJob(jobId, {
+        progress: entry.progress_text || 'Generating...',
       });
-      cumulativeBlob = modalResult.audioBlob;
 
-      // Build a pseudo TaskResultItem from direct API response
-      if (modalResult.metas && Object.keys(modalResult.metas).length > 0) {
-        firstResult = {
-          file: '',
-          wave: '',
-          status: 1,
-          create_time: Date.now(),
-          env: 'modal',
-          prompt: clip.prompt,
-          lyrics: clip.lyrics,
-          metas: modalResult.metas,
-          seed_value: modalResult.seed_value,
-          dit_model: modalResult.dit_model,
-        };
+      if (entry.status === 1) {
+        const resultItems: TaskResultItem[] = JSON.parse(entry.result);
+        firstResult = resultItems?.[0] ?? null;
+        resultAudioPath = firstResult?.file ?? null;
+        break;
+      } else if (entry.status === 2) {
+        throw new Error(`Generation failed: ${entry.result}`);
       }
-    } else {
-      // ── Standard API path: async queue ──
-      const releaseResp = await api.releaseTask(srcAudioBlob, params, { signal: generationSignal });
-      const taskId = releaseResp.task_id;
-      setClipGenerationTaskId(clipId, jobId, taskId);
-
-      // Poll for completion
-      const startTime = Date.now();
-      let resultAudioPath: string | null = null;
-      let lastPollError: string | null = null;
-
-      while (Date.now() - startTime < MAX_POLL_DURATION_MS) {
-        await sleepWithAbort(POLL_INTERVAL_MS, generationSignal);
-
-        let entries;
-        try {
-          entries = await api.queryResult([taskId], { signal: generationSignal });
-          lastPollError = null;
-        } catch (error) {
-          lastPollError = error instanceof Error ? error.message : 'query_result failed';
-          continue;
-        }
-        const entry = entries?.[0];
-        if (!entry) continue;
-
-        useGenerationStore.getState().updateJob(jobId, {
-          progress: entry.progress_text || 'Generating...',
-        });
-
-        if (entry.status === 1) {
-          const resultItems: TaskResultItem[] = JSON.parse(entry.result);
-          firstResult = resultItems?.[0] ?? null;
-          resultAudioPath = firstResult?.file ?? null;
-          break;
-        } else if (entry.status === 2) {
-          throw new Error(`Generation failed: ${entry.result}`);
-        }
-      }
-
-      if (!resultAudioPath) {
-        throw new Error(lastPollError ? `Generation timed out (${lastPollError})` : 'Generation timed out');
-      }
-
-      // Download audio
-      useGenerationStore.getState().updateJob(jobId, { status: 'processing', progress: 'Downloading audio...' });
-      useProjectStore.getState().updateClipStatus(clipId, 'processing');
-
-      cumulativeBlob = await api.downloadAudio(resultAudioPath, { signal: generationSignal });
     }
+
+    if (!resultAudioPath) {
+      throw new Error(lastPollError ? `Generation timed out (${lastPollError})` : 'Generation timed out');
+    }
+
+    // Download audio
+    useGenerationStore.getState().updateJob(jobId, { status: 'processing', progress: 'Downloading audio...' });
+    useProjectStore.getState().updateClipStatus(clipId, 'processing');
+
+    cumulativeBlob = await api.downloadAudio(resultAudioPath, { signal: generationSignal });
 
     // Store cumulative mix
     const cumulativeKey = await saveAudioBlob(project.id, clipId, 'cumulative', cumulativeBlob);

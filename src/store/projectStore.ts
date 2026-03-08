@@ -611,11 +611,7 @@ export const useProjectStore = create<ProjectState>()(
         const state = persisted as Partial<ProjectState>;
         if (state?.project) {
           // Ensure generationDefaults has all fields
-          if (state.project.generationDefaults) {
-            if (state.project.generationDefaults.useModal === undefined) {
-              state.project.generationDefaults.useModal = true;
-            }
-          } else {
+          if (!state.project.generationDefaults) {
             state.project.generationDefaults = { ...DEFAULT_GENERATION };
           }
           state.project.tracks = (state.project.tracks ?? []).map((track) => ({

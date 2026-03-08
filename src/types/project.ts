@@ -67,7 +67,6 @@ export interface GenerationDefaults {
   shift: number;
   thinking: boolean;
   model: string;
-  useModal: boolean;
 }
 
 export interface Project {

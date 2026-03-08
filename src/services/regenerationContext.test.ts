@@ -65,7 +65,6 @@ function makeProject(tracks: Track[]): Project {
       shift: 2,
       thinking: false,
       model: '',
-      useModal: true,
     },
   };
 }
