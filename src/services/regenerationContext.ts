@@ -82,7 +82,7 @@ export function collectRegenerationContextSources(
       const audioOffset = Math.max(0, clip.audioOffset ?? 0);
       const clipStart = clip.startTime;
       const clipEnd = clip.startTime + Math.max(0, clip.duration);
-      if (maxContextEndTime != null && clipStart >= maxContextEndTime) continue;
+      if (maxContextEndTime != null && clipStart > maxContextEndTime) continue;
       const playbackEnd = maxContextEndTime == null
         ? clipEnd
         : Math.min(clipEnd, maxContextEndTime);
@@ -127,6 +127,7 @@ export function getRegenerationContextEnd(
 export async function buildRegenerationContextMix(
   project: Project,
   excludedClipId: string,
+  desiredContextEndTime: number | null = null,
 ): Promise<RegenerationContext> {
   const workspace = useArrangementStore.getState().workspacesByProjectId[project.id] ?? null;
   const clipsById = new Map<string, Project['tracks'][number]['clips'][number]>();
@@ -134,7 +135,10 @@ export async function buildRegenerationContextMix(
     for (const clip of track.clips) clipsById.set(clip.id, clip);
   }
   const targetClip = clipsById.get(excludedClipId) ?? null;
-  const maxContextEndTime = targetClip?.startTime ?? null;
+  const targetClipEnd = targetClip
+    ? targetClip.startTime + Math.max(0, targetClip.duration)
+    : null;
+  const maxContextEndTime = desiredContextEndTime ?? targetClipEnd;
   const sources = collectRegenerationContextSources(
     project,
     excludedClipId,

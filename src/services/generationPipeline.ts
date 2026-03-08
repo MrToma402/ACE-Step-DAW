@@ -336,8 +336,12 @@ export async function generateSingleClip(clipId: string): Promise<void> {
 
   try {
     const { project } = useProjectStore.getState();
+    const targetClip = project ? useProjectStore.getState().getClipById(clipId) : null;
+    const contextEndTime = targetClip
+      ? targetClip.startTime + Math.max(0, targetClip.duration)
+      : null;
     const context = project
-      ? await buildRegenerationContextMix(project, clipId)
+      ? await buildRegenerationContextMix(project, clipId, contextEndTime)
       : { blob: null, endTime: null, warningMessage: null };
     if (context.warningMessage && typeof window !== 'undefined') {
       window.alert(context.warningMessage);
@@ -359,8 +363,12 @@ export async function generateSingleClipRepaint(
 
   try {
     const { project } = useProjectStore.getState();
+    const targetClip = project ? useProjectStore.getState().getClipById(clipId) : null;
+    const repaintingBounds = targetClip
+      ? resolveRepaintingBounds(targetClip, { startTime: repaintStartTime, endTime: repaintEndTime })
+      : null;
     const context = project
-      ? await buildRegenerationContextMix(project, clipId)
+      ? await buildRegenerationContextMix(project, clipId, repaintingBounds?.endTime ?? null)
       : { blob: null, endTime: null, warningMessage: null };
     if (context.warningMessage && typeof window !== 'undefined') {
       window.alert(context.warningMessage);

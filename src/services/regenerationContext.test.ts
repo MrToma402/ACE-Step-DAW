@@ -159,6 +159,19 @@ test('collectRegenerationContextSources truncates future context at maxContextEn
   assert.deepEqual(sources.map((source) => source.endTime), [8, 10]);
 });
 
+test('collectRegenerationContextSources includes same-start clips and clamps to desired end time', () => {
+  const project = makeProject([
+    makeTrack('target', [makeClip('t1', 10, 4)]),
+    makeTrack('ctx', [makeClip('c1', 10, 6), makeClip('c2', 12, 6)]),
+  ]);
+
+  const sources = collectRegenerationContextSources(project, 't1', null, 14);
+
+  assert.deepEqual(sources.map((source) => source.clipId), ['c1', 'c2']);
+  assert.deepEqual(sources.map((source) => source.playbackDuration), [4, 2]);
+  assert.deepEqual(sources.map((source) => source.endTime), [14, 14]);
+});
+
 test('resolveSourceWindow truncates to decoded audio and skips empty windows', () => {
   const source = {
     clipId: 'x',
