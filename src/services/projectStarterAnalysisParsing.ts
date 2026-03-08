@@ -1,23 +1,59 @@
 import { TIME_SIGNATURES } from '../constants/tracks';
 import type { TaskResultEntry } from '../types/api';
+import {
+  asStringList,
+  extractInstrumentHints,
+  uniqueCaseInsensitive,
+} from './projectStarterAnalysisUtils';
 
 export interface ProjectStarterAnalysis {
   bpm: number | null;
   keyScale: string | null;
   timeSignature: number | null;
   rawTimeSignature: string | null;
+  caption: string | null;
+  genre: string | null;
+  genres: string[];
+  language: string | null;
+  lyrics: string | null;
+  durationSeconds: number | null;
+  instruments: string[];
+  rawMetas: Record<string, unknown>;
+}
+
+interface RawResultMetas {
+  bpm?: number | string;
+  duration?: number | string;
+  keyscale?: string;
+  timesignature?: string | number;
+  caption?: string;
+  genres?: string | string[];
+  genre?: string | string[];
+  lyrics?: string;
+  language?: string;
+  instruments?: string | string[];
+  instrument?: string | string[];
+  instrumentation?: string | string[];
+  [key: string]: unknown;
 }
 
 interface RawResultItem {
-  metas?: {
-    bpm?: number | string;
-    keyscale?: string;
-    timesignature?: string | number;
-  };
+  metas?: RawResultMetas;
   bpm?: number | string;
+  duration?: number | string;
   keyscale?: string;
   timesignature?: string | number;
+  prompt?: string;
+  caption?: string;
+  genres?: string | string[];
+  genre?: string | string[];
+  lyrics?: string;
+  language?: string;
+  instruments?: string | string[];
+  instrument?: string | string[];
+  instrumentation?: string | string[];
   error?: string | null;
+  [key: string]: unknown;
 }
 
 function asFiniteNumber(value: unknown): number | null {
@@ -101,14 +137,49 @@ export function toProjectStarterAnalysis(entry: TaskResultEntry): ProjectStarter
   const item = parsed[0];
   const metas = item?.metas ?? {};
   const bpmCandidate = asFiniteNumber(item?.bpm) ?? asFiniteNumber(metas.bpm);
+  const durationCandidate = asFiniteNumber(item?.duration) ?? asFiniteNumber(metas.duration);
   const keyCandidate = asNonEmptyString(item?.keyscale) ?? asNonEmptyString(metas.keyscale);
   const timeSignatureCandidate = item?.timesignature ?? metas.timesignature;
   const normalizedTimeSignature = normalizeTimeSignature(timeSignatureCandidate);
+  const captionCandidate =
+    asNonEmptyString(item?.prompt) ??
+    asNonEmptyString(item?.caption) ??
+    asNonEmptyString(metas.caption);
+  const genreCandidate =
+    asNonEmptyString(item?.genre) ??
+    asNonEmptyString(item?.genres) ??
+    asNonEmptyString(metas.genre) ??
+    asNonEmptyString(metas.genres);
+  const genres = uniqueCaseInsensitive([
+    ...asStringList(item?.genres),
+    ...asStringList(item?.genre),
+    ...asStringList(metas.genres),
+    ...asStringList(metas.genre),
+  ]);
+  const explicitInstruments = uniqueCaseInsensitive([
+    ...asStringList(item?.instruments),
+    ...asStringList(item?.instrument),
+    ...asStringList(item?.instrumentation),
+    ...asStringList(metas.instruments),
+    ...asStringList(metas.instrument),
+    ...asStringList(metas.instrumentation),
+  ]);
+  const instruments = explicitInstruments.length > 0
+    ? explicitInstruments
+    : extractInstrumentHints([captionCandidate, genreCandidate]);
 
   return {
     bpm: bpmCandidate === null ? null : Math.round(bpmCandidate),
     keyScale: keyCandidate,
     timeSignature: normalizedTimeSignature.numerator,
     rawTimeSignature: normalizedTimeSignature.raw,
+    caption: captionCandidate,
+    genre: genreCandidate,
+    genres,
+    language: asNonEmptyString(item?.language) ?? asNonEmptyString(metas.language),
+    lyrics: asNonEmptyString(item?.lyrics) ?? asNonEmptyString(metas.lyrics),
+    durationSeconds: durationCandidate === null ? null : durationCandidate,
+    instruments,
+    rawMetas: metas,
   };
 }

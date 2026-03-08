@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-export type ActiveTab = 'daw' | 'composer';
+export type ActiveTab = 'daw' | 'composer' | 'analyze';
 
 export interface ShortcutBindings {
   playPause: string;

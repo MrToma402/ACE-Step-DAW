@@ -44,6 +44,7 @@ export function Toolbar() {
   const tabs: { id: ActiveTab; label: string; icon: string }[] = [
     { id: 'composer', label: 'Composer', icon: 'auto_awesome' },
     { id: 'daw', label: 'DAW', icon: 'tune' },
+    { id: 'analyze', label: 'Analyze', icon: 'analytics' },
   ];
 
   return (

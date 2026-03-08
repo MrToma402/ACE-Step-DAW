@@ -196,7 +196,7 @@ export async function analyzeProjectStarterAudio(
     const entry = entries?.[0];
     if (!entry) continue;
 
-    onProgress?.(entry.progress_text?.trim() || 'Analyzing vocal...');
+    onProgress?.(entry.progress_text?.trim() || 'Analyzing audio...');
 
     if (entry.status === 1) return toProjectStarterAnalysis(entry);
     if (entry.status === 2) throw new Error(summarizeAnalysisFailure(entry));

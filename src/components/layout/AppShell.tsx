@@ -17,6 +17,7 @@ import { KeyboardShortcutsDialog } from '../dialogs/KeyboardShortcutsDialog';
 import { ExtendConfirmDialog } from '../dialogs/ExtendConfirmDialog';
 import { RepaintDialog } from '../dialogs/RepaintDialog';
 import { CoverDialog } from '../dialogs/CoverDialog';
+import { AnalyzeView } from '../analyze/AnalyzeView';
 import { useAudioEngine } from '../../hooks/useAudioEngine';
 import { useProjectStore } from '../../store/projectStore';
 import { useUIStore } from '../../store/uiStore';
@@ -318,9 +319,13 @@ export function AppShell() {
           )}
           {project && <GenerationPanel />}
         </>
-      ) : (
+      ) : activeTab === 'composer' ? (
         <div className="flex-1 min-h-0">
           <ComposerView />
+        </div>
+      ) : (
+        <div className="flex-1 min-h-0">
+          <AnalyzeView />
         </div>
       )}
 
