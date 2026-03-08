@@ -1,9 +1,8 @@
 import {
-  clamp,
-  estimateLag,
   subtractChannelAdaptive,
   type AdaptiveSubtractionConfig,
 } from './waveSubtractionCore';
+import { clamp, estimateLag } from './waveSubtractionShared';
 
 export interface WaveSubtractionOptions {
   alpha?: number;

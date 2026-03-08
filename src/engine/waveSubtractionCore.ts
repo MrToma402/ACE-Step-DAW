@@ -1,4 +1,5 @@
 import { decorrelateResidual, orthogonalizeResidual } from './waveSubtractionDecorrelation';
+import { buildHannWindow, clamp } from './waveSubtractionShared';
 
 export interface AdaptiveSubtractionConfig {
   alpha: number;
@@ -21,72 +22,26 @@ export interface AdaptiveSubtractionConfig {
 }
 
 const EPS = 1e-8;
+const MIN_LOCAL_CORRELATION = 0.08;
+const TRANSIENT_MATCH_MULTIPLIER = 1.2;
+const TRANSIENT_PRESERVE_BLEND = 0.4;
+const MAX_RESIDUAL_FLOOR_BOOST = 3.0;
 
-export function clamp(value: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, value));
+interface BlockStats {
+  count: number;
+  sumCP: number;
+  sumPP: number;
+  sumCC: number;
+  corrAbs: number;
 }
 
-export function estimateLag(
-  current: Float32Array,
-  previous: Float32Array,
-  length: number,
-  maxLagSamples: number,
-  stride: number,
-): number {
-  const step = Math.max(1, stride);
-  const lagLimit = Math.max(0, Math.min(maxLagSamples, Math.floor(length / 8)));
-  if (length <= 0 || lagLimit === 0) return 0;
-
-  let bestLag = 0;
-  let bestScore = -Infinity;
-  for (let lag = -lagLimit; lag <= lagLimit; lag++) {
-    let sumXY = 0;
-    let sumXX = 0;
-    let sumYY = 0;
-    let count = 0;
-    for (let i = 0; i < length; i += step) {
-      const j = i - lag;
-      if (j < 0 || j >= length) continue;
-      const x = current[i];
-      const y = previous[j];
-      sumXY += x * y;
-      sumXX += x * x;
-      sumYY += y * y;
-      count++;
-    }
-    if (count < 8) continue;
-    const denom = Math.sqrt(sumXX * sumYY);
-    if (denom <= EPS) continue;
-    const score = sumXY / denom;
-    if (score > bestScore) {
-      bestScore = score;
-      bestLag = lag;
-    }
-  }
-  return bestLag;
-}
-
-function buildHannWindow(size: number): Float32Array {
-  const window = new Float32Array(size);
-  if (size <= 1) {
-    window[0] = 1;
-    return window;
-  }
-  const denom = size - 1;
-  for (let i = 0; i < size; i++) {
-    window[i] = 0.5 - (0.5 * Math.cos((2 * Math.PI * i) / denom));
-  }
-  return window;
-}
-
-function computeBlockParams(
+function computeBlockStats(
   current: Float32Array,
   previous: Float32Array,
   start: number,
   end: number,
   lag: number,
-  config: AdaptiveSubtractionConfig,
-): { gain: number; alpha: number } {
+): BlockStats {
   let sumCP = 0;
   let sumPP = 0;
   let sumCC = 0;
@@ -101,20 +56,48 @@ function computeBlockParams(
     sumCC += c * c;
     count++;
   }
-  if (count === 0) return { gain: 1, alpha: config.alpha };
-
-  const gain = config.gainMatch && sumPP > EPS
-    ? clamp(Math.max(0, sumCP / sumPP), config.minGainCompensation, config.maxGainCompensation)
-    : 1;
+  if (count === 0) {
+    return { count: 0, sumCP: 0, sumPP: 0, sumCC: 0, corrAbs: 0 };
+  }
 
   const denom = Math.sqrt(sumCC * sumPP);
-  const corr = denom > EPS ? clamp(sumCP / denom, -1, 1) : 1;
-  const corr01 = clamp(corr, 0, 1);
-  const alpha = config.adaptiveAlpha
-    ? clamp(config.alpha * (config.adaptiveAlphaFloor + ((1 - config.adaptiveAlphaFloor) * corr01)), 0, 1.5)
-    : config.alpha;
+  const corr = denom > EPS ? clamp(sumCP / denom, -1, 1) : 0;
+  return { count, sumCP, sumPP, sumCC, corrAbs: Math.abs(corr) };
+}
 
-  return { gain, alpha };
+function resolveSubtractionGain(
+  stats: BlockStats,
+  config: AdaptiveSubtractionConfig,
+): number {
+  if (!config.gainMatch || stats.sumPP <= EPS) return 1;
+  const rawGain = Math.max(0, stats.sumCP / stats.sumPP);
+  return clamp(rawGain, config.minGainCompensation, config.maxGainCompensation);
+}
+
+function resolveSubtractionAlpha(
+  corrAbs: number,
+  config: AdaptiveSubtractionConfig,
+): number {
+  const adaptiveBase = config.adaptiveAlpha
+    ? config.adaptiveAlphaFloor + ((1 - config.adaptiveAlphaFloor) * corrAbs)
+    : 1;
+  let alpha = clamp(config.alpha * adaptiveBase, 0, 1.5);
+  if (corrAbs < MIN_LOCAL_CORRELATION) {
+    alpha *= corrAbs / MIN_LOCAL_CORRELATION;
+  }
+  return alpha;
+}
+
+function computeResidualFloorBoost(
+  rmsCurrent: number,
+  rmsResidual: number,
+  corrAbs: number,
+  config: AdaptiveSubtractionConfig,
+): number {
+  if (!config.bleedGate || corrAbs < config.bleedCorrelationThreshold) return 1;
+  const targetFloor = rmsCurrent * clamp(config.bleedGateThreshold, 0.05, 0.8);
+  if (rmsResidual >= targetFloor) return 1;
+  return clamp(targetFloor / (rmsResidual + EPS), 1, MAX_RESIDUAL_FLOOR_BOOST);
 }
 
 export function subtractChannelAdaptive(
@@ -134,11 +117,12 @@ export function subtractChannelAdaptive(
   for (let start = 0; start < length; start += hop) {
     const end = Math.min(length, start + blockSize);
     const localLength = end - start;
-    const { gain, alpha } = computeBlockParams(current, previous, start, end, lag, config);
+    const stats = computeBlockStats(current, previous, start, end, lag);
+    if (stats.count === 0) continue;
+    const gain = resolveSubtractionGain(stats, config);
+    const alpha = resolveSubtractionAlpha(stats.corrAbs, config);
 
-    let sumRP = 0;
     let sumRR = 0;
-    let sumEE = 0;
     for (let k = 0; k < localLength; k++) {
       const i = start + k;
       const j = i - lag;
@@ -146,24 +130,35 @@ export function subtractChannelAdaptive(
       const estimate = alpha * gain * p;
       const r = current[i] - estimate;
       residual[k] = r;
-      sumRP += r * estimate;
       sumRR += r * r;
-      sumEE += estimate * estimate;
     }
 
-    let blockScale = 1;
-    if (config.bleedGate && sumRR > EPS && sumEE > EPS) {
-      const corr = Math.abs(sumRP) / Math.sqrt(sumRR * sumEE);
-      const ratio = sumRR / (sumEE + EPS);
-      if (corr > config.bleedCorrelationThreshold && ratio < config.bleedGateThreshold) {
-        blockScale = clamp(ratio / config.bleedGateThreshold, 0.2, 1);
-      }
-    }
+    const rmsCurrent = Math.sqrt(stats.sumCC / stats.count);
+    const rmsResidual = Math.sqrt(sumRR / stats.count);
+    const residualFloorBoost = computeResidualFloorBoost(
+      rmsCurrent,
+      rmsResidual,
+      stats.corrAbs,
+      config,
+    );
 
     for (let k = 0; k < localLength; k++) {
       const i = start + k;
+      const j = i - lag;
+      const p = j >= 0 && j < previous.length ? previous[j] : 0;
+      const c = current[i];
+      let safeResidual = residual[k] * residualFloorBoost;
+      const transientWeight = clamp(
+        (Math.abs(c) - (Math.abs(p) * TRANSIENT_MATCH_MULTIPLIER)) / (Math.abs(c) + EPS),
+        0,
+        1,
+      );
+      if (transientWeight > 0) {
+        const keepCurrent = transientWeight * TRANSIENT_PRESERVE_BLEND;
+        safeResidual = (safeResidual * (1 - keepCurrent)) + (c * keepCurrent);
+      }
       const w = window[k];
-      sum[i] += residual[k] * blockScale * w;
+      sum[i] += safeResidual * w;
       weights[i] += w;
     }
   }
