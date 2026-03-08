@@ -25,6 +25,7 @@ import { useTransport } from '../../hooks/useTransport';
 import { useArrangementStore } from '../../store/arrangementStore';
 import { useDawLayoutResize } from '../../hooks/useDawLayoutResize';
 import { resolveDuplicateShortcutAction } from '../../features/timeline/duplicateShortcut';
+import { isDisposableDraftClip } from '../../features/generation/draftClipCleanup';
 
 export function AppShell() {
   const { resumeOnGesture } = useAudioEngine();
@@ -44,6 +45,7 @@ export function AppShell() {
   const showSettingsDialog = useUIStore((s) => s.showSettingsDialog);
   const showProjectListDialog = useUIStore((s) => s.showProjectListDialog);
   const editingClipId = useUIStore((s) => s.editingClipId);
+  const draftClipId = useUIStore((s) => s.draftClipId);
   const extendConfirmRequest = useUIStore((s) => s.extendConfirmRequest);
   const repaintRequest = useUIStore((s) => s.repaintRequest);
   const coverRequest = useUIStore((s) => s.coverRequest);
@@ -57,6 +59,7 @@ export function AppShell() {
   const setShowProjectListDialog = useUIStore((s) => s.setShowProjectListDialog);
   const setShowKeyboardShortcutsDialog = useUIStore((s) => s.setShowKeyboardShortcutsDialog);
   const setEditingClip = useUIStore((s) => s.setEditingClip);
+  const setDraftClipId = useUIStore((s) => s.setDraftClipId);
   const closeExtendConfirmDialog = useUIStore((s) => s.closeExtendConfirmDialog);
   const closeRepaintDialog = useUIStore((s) => s.closeRepaintDialog);
   const closeCoverDialog = useUIStore((s) => s.closeCoverDialog);
@@ -121,6 +124,11 @@ export function AppShell() {
         return true;
       }
       if (editingClipId) {
+        const clip = getClipById(editingClipId);
+        if (draftClipId === editingClipId && isDisposableDraftClip(clip)) {
+          removeClip(editingClipId);
+        }
+        setDraftClipId(null);
         setEditingClip(null);
         return true;
       }
@@ -225,6 +233,7 @@ export function AppShell() {
     showSettingsDialog,
     showProjectListDialog,
     editingClipId,
+    draftClipId,
     extendConfirmRequest,
     repaintRequest,
     coverRequest,
@@ -233,6 +242,7 @@ export function AppShell() {
     closeRepaintDialog,
     closeCoverDialog,
     setEditingClip,
+    setDraftClipId,
     setShowExportDialog,
     setShowInstrumentPicker,
     setShowKeyboardShortcutsDialog,

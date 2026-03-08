@@ -9,6 +9,7 @@ export function useTimelineInteraction() {
   const pixelsPerSecond = useUIStore((s) => s.pixelsPerSecond);
   const project = useProjectStore((s) => s.project);
   const addClip = useProjectStore((s) => s.addClip);
+  const setDraftClipId = useUIStore((s) => s.setDraftClipId);
   const workspace = useArrangementStore((s) =>
     project ? s.workspacesByProjectId[project.id] : undefined,
   );
@@ -42,9 +43,10 @@ export function useTimelineInteraction() {
         lyrics: '',
       });
 
+      setDraftClipId(clip.id);
       useUIStore.getState().setEditingClip(clip.id);
     },
-    [project, addClip],
+    [project, addClip, setDraftClipId],
   );
 
   const handleLaneClick = useCallback(

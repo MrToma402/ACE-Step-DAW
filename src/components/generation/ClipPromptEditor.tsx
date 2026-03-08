@@ -4,10 +4,13 @@ import { useUIStore } from '../../store/uiStore';
 import { useGeneration } from '../../hooks/useGeneration';
 import { KEY_SCALES, TIME_SIGNATURES } from '../../constants/tracks';
 import { normalizeSeconds } from '../../utils/time';
+import { isDisposableDraftClip } from '../../features/generation/draftClipCleanup';
 
 export function ClipPromptEditor() {
   const editingClipId = useUIStore((s) => s.editingClipId);
   const setEditingClip = useUIStore((s) => s.setEditingClip);
+  const draftClipId = useUIStore((s) => s.draftClipId);
+  const setDraftClipId = useUIStore((s) => s.setDraftClipId);
   const getClipById = useProjectStore((s) => s.getClipById);
   const updateClip = useProjectStore((s) => s.updateClip);
   const removeClip = useProjectStore((s) => s.removeClip);
@@ -63,6 +66,7 @@ export function ClipPromptEditor() {
       autoExpandPrompt,
       lockedSeed,
     });
+    setDraftClipId(null);
     setEditingClip(null);
   };
 
@@ -79,12 +83,25 @@ export function ClipPromptEditor() {
       autoExpandPrompt,
       lockedSeed,
     });
+    setDraftClipId(null);
     setEditingClip(null);
     generateClip(editingClipId);
   };
 
   const handleDelete = () => {
+    setDraftClipId(null);
     removeClip(editingClipId);
+    setEditingClip(null);
+  };
+
+  const handleClose = () => {
+    const shouldRemoveDraft =
+      draftClipId === editingClipId
+      && isDisposableDraftClip(clip);
+    if (shouldRemoveDraft) {
+      removeClip(editingClipId);
+    }
+    setDraftClipId(null);
     setEditingClip(null);
   };
 
@@ -110,7 +127,7 @@ export function ClipPromptEditor() {
         <div className="flex items-center justify-between px-4 py-3 border-b border-daw-border">
           <h2 className="text-sm font-medium">Edit Clip</h2>
           <button
-            onClick={() => setEditingClip(null)}
+            onClick={handleClose}
             className="text-zinc-500 hover:text-zinc-300 text-lg leading-none"
           >
             ×

@@ -27,6 +27,7 @@ export function ClipBlock({ clip, track }: ClipBlockProps) {
   const selectedClipIds = useUIStore((s) => s.selectedClipIds);
   const selectClip = useUIStore((s) => s.selectClip);
   const setEditingClip = useUIStore((s) => s.setEditingClip);
+  const setDraftClipId = useUIStore((s) => s.setDraftClipId);
   const clipDragPreview = useUIStore((s) => s.clipDragPreview);
   const setClipDragPreview = useUIStore((s) => s.setClipDragPreview);
   const setClipGestureActive = useUIStore((s) => s.setClipGestureActive);
@@ -316,8 +317,9 @@ export function ClipBlock({ clip, track }: ClipBlockProps) {
 
   const handleDoubleClick = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
+    setDraftClipId(null);
     setEditingClip(clip.id);
-  }, [clip.id, setEditingClip]);
+  }, [clip.id, setDraftClipId, setEditingClip]);
 
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -633,7 +635,7 @@ export function ClipBlock({ clip, track }: ClipBlockProps) {
         <ClipContextMenu
           x={ctxMenu.x}
           y={ctxMenu.y}
-          onEdit={() => { closeCtxMenu(); setEditingClip(clip.id); }}
+          onEdit={() => { closeCtxMenu(); setDraftClipId(null); setEditingClip(clip.id); }}
           onGenerate={() => { closeCtxMenu(); generateClip(clip.id); }}
           onCover={() => { closeCtxMenu(); openCoverDialog({ clipId: clip.id, referenceClipId: clip.id }); }}
           onDuplicate={() => { closeCtxMenu(); duplicateClip(clip.id); }}

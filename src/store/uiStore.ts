@@ -50,6 +50,7 @@ interface UIState {
   showSettingsDialog: boolean;
   showProjectListDialog: boolean;
   showKeyboardShortcutsDialog: boolean;
+  draftClipId: string | null;
   extendConfirmRequest: ExtendConfirmRequest | null;
   repaintRequest: RepaintRequest | null;
   coverRequest: CoverRequest | null;
@@ -75,6 +76,7 @@ interface UIState {
   setShowSettingsDialog: (v: boolean) => void;
   setShowProjectListDialog: (v: boolean) => void;
   setShowKeyboardShortcutsDialog: (v: boolean) => void;
+  setDraftClipId: (clipId: string | null) => void;
   openExtendConfirmDialog: (request: ExtendConfirmRequest) => void;
   closeExtendConfirmDialog: () => void;
   openRepaintDialog: (request: RepaintRequest) => void;
@@ -109,6 +111,7 @@ export const useUIStore = create<UIState>((set) => ({
   showSettingsDialog: false,
   showProjectListDialog: false,
   showKeyboardShortcutsDialog: false,
+  draftClipId: null,
   extendConfirmRequest: null,
   repaintRequest: null,
   coverRequest: null,
@@ -159,6 +162,7 @@ export const useUIStore = create<UIState>((set) => ({
   setShowSettingsDialog: (v) => set({ showSettingsDialog: v }),
   setShowProjectListDialog: (v) => set({ showProjectListDialog: v }),
   setShowKeyboardShortcutsDialog: (v) => set({ showKeyboardShortcutsDialog: v }),
+  setDraftClipId: (clipId) => set({ draftClipId: clipId }),
   openExtendConfirmDialog: (request) => set({ extendConfirmRequest: request }),
   closeExtendConfirmDialog: () => set({ extendConfirmRequest: null }),
   openRepaintDialog: (request) => set({ repaintRequest: request }),
