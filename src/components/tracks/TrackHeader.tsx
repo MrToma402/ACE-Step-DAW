@@ -1,13 +1,23 @@
-import { useRef, useState, type ChangeEvent, type DragEvent, type PointerEvent as ReactPointerEvent } from 'react';
+import {
+  useRef,
+  useState,
+  type ChangeEvent,
+  type DragEvent,
+  type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
+} from 'react';
 import type { Track } from '../../types/project';
 import { useProjectStore } from '../../store/projectStore';
 import { useArrangementStore } from '../../store/arrangementStore';
+import { useGenerationStore } from '../../store/generationStore';
 import { useAudioImport } from '../../hooks/useAudioImport';
 import { getAudioEngine } from '../../hooks/useAudioEngine';
 import { loadAudioBlobByKey } from '../../services/audioFileManager';
 import { exportMixToWav } from '../../engine/exportMix';
 import { isArrangementClipSelected } from '../../features/arrangement/selection';
 import { shouldBlockTrackDragForTagName } from './trackDragGuards';
+import { TrackHeaderContextMenu } from './TrackHeaderContextMenu';
+import { extractTrackToNewTracks } from '../../services/stemExtractionPipeline';
 
 interface TrackHeaderProps {
   track: Track;
@@ -30,6 +40,7 @@ export function TrackHeader({
 }: TrackHeaderProps) {
   const updateTrack = useProjectStore((s) => s.updateTrack);
   const removeTrack = useProjectStore((s) => s.removeTrack);
+  const isGenerating = useGenerationStore((s) => s.isGenerating);
   const project = useProjectStore((s) => s.project);
   const workspace = useArrangementStore((s) =>
     project ? s.workspacesByProjectId[project.id] ?? null : null,
@@ -38,6 +49,8 @@ export function TrackHeader({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const suppressDragRef = useRef(false);
   const [isDownloading, setIsDownloading] = useState(false);
+  const [isExtracting, setIsExtracting] = useState(false);
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
 
   const volumePct = Math.round(track.volume * 100);
 
@@ -141,120 +154,167 @@ export function TrackHeader({
     onDropTrack?.(track.id);
   };
 
+  const closeCtxMenu = () => setCtxMenu(null);
+
+  const handleContextMenu = (event: ReactMouseEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setCtxMenu({ x: event.clientX, y: event.clientY });
+  };
+
+  const handleExtractToTracks = async () => {
+    closeCtxMenu();
+    if (isExtracting || isGenerating) return;
+    setIsExtracting(true);
+    try {
+      const result = await extractTrackToNewTracks(track.id);
+      const createdCount = result.createdTrackNames.length;
+      const skippedCount = result.skippedTrackNames.length;
+      const failedCount = result.failedTrackNames.length;
+      const lines: string[] = [];
+      lines.push(`Created ${createdCount} extracted track(s).`);
+      if (skippedCount > 0) lines.push(`Skipped ${skippedCount} silent stem(s).`);
+      if (failedCount > 0) lines.push(`Failed ${failedCount} stem(s).`);
+      if (typeof window !== 'undefined') {
+        window.alert(lines.join('\n'));
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Stem extraction failed';
+      if (typeof window !== 'undefined') {
+        window.alert(message);
+      }
+    } finally {
+      setIsExtracting(false);
+    }
+  };
+
   return (
-    <div
-      draggable
-      onDragStart={handleDragStart}
-      onDragOver={handleDragOver}
-      onDrop={handleDrop}
-      onPointerDownCapture={handlePointerDownCapture}
-      onPointerUpCapture={clearDragSuppression}
-      onPointerCancel={clearDragSuppression}
-      onDragEnd={onDragEndTrack}
-      className={`flex flex-col justify-between h-24 border-b border-daw-border group transition-colors cursor-grab active:cursor-grabbing ${
-        isDragging
-          ? 'bg-daw-panel-light opacity-70'
-          : isDropTarget
-            ? 'bg-daw-accent/10 ring-1 ring-inset ring-daw-accent/50'
-            : 'bg-daw-panel hover:bg-daw-panel-light'
-      } ${track.hidden ? 'opacity-60' : ''}`}
-    >
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept="audio/*"
-        className="hidden"
-        onChange={handleFileChange}
-      />
-      {/* Top: Name + Track number */}
-      <div className="px-2.5 pt-2">
-        <div className="flex items-center justify-between mb-1.5">
-          <span
-            className="text-[10px] font-bold tracking-[0.15em] uppercase truncate"
-            style={{ color: track.color }}
-          >
-            {track.displayName}
-          </span>
-          <span className="text-[9px] text-slate-600 font-mono">{String(track.order + 1).padStart(2, '0')}</span>
-        </div>
-
-        {/* Mute / Solo / Remove buttons */}
-        <div className="flex gap-1" data-no-track-drag="true">
-          <button
-            onClick={() => updateTrack(track.id, { hidden: !track.hidden })}
-            className={`w-5 h-4 text-[8px] font-bold flex items-center justify-center rounded transition-colors ${
-              track.hidden
-                ? 'bg-slate-700/80 text-slate-200'
-                : 'bg-black/40 text-slate-600 hover:text-white'
-            }`}
-            title={track.hidden ? 'Show track' : 'Hide track'}
-          >
-            <span className="material-symbols-outlined" style={{ fontSize: '10px' }}>
-              {track.hidden ? 'visibility_off' : 'visibility'}
-            </span>
-          </button>
-          <button
-            onClick={() => updateTrack(track.id, { muted: !track.muted })}
-            className={`w-5 h-4 text-[8px] font-bold flex items-center justify-center rounded transition-colors ${track.muted
-              ? 'bg-amber-600/80 text-white'
-              : 'bg-black/40 text-slate-600 hover:text-white'
-              }`}
-            title="Mute"
-          >
-            M
-          </button>
-          <button
-            onClick={() => updateTrack(track.id, { soloed: !track.soloed })}
-            className={`w-5 h-4 text-[8px] font-bold flex items-center justify-center rounded transition-colors ${track.soloed
-              ? 'bg-emerald-600/80 text-white'
-              : 'bg-black/40 text-slate-600 hover:text-white'
-              }`}
-            title="Solo"
-          >
-            S
-          </button>
-          <button
-            onClick={handleImportClick}
-            className="w-5 h-4 text-[8px] font-bold flex items-center justify-center rounded bg-black/40 text-slate-600 hover:text-blue-400 hover:bg-blue-900/30 transition-all"
-            title="Import audio to this track"
-          >
-            <span className="material-symbols-outlined" style={{ fontSize: '10px' }}>upload</span>
-          </button>
-          <button
-            onClick={handleDownloadTrack}
-            disabled={isDownloading}
-            className="w-5 h-4 text-[8px] font-bold flex items-center justify-center rounded bg-black/40 text-slate-300 hover:text-emerald-300 hover:bg-emerald-900/30 transition-all disabled:cursor-not-allowed"
-            title="Download this track as WAV"
-          >
-            <svg viewBox="0 0 16 16" width="10" height="10" fill="none" aria-hidden="true">
-              <path d="M8 2v7m0 0l-3-3m3 3l3-3M3 12h10" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </button>
-          <button
-            onClick={() => removeTrack(track.id)}
-            className="w-5 h-4 text-[8px] font-bold flex items-center justify-center rounded bg-black/40 text-slate-600 hover:text-red-400 hover:bg-red-900/30 transition-all ml-auto"
-            title="Remove track"
-          >
-            ×
-          </button>
-        </div>
-      </div>
-
-      {/* Bottom: Volume meter */}
-      <div className="px-2.5 pb-2" data-no-track-drag="true">
+    <>
+      <div
+        draggable
+        onDragStart={handleDragStart}
+        onDragOver={handleDragOver}
+        onDrop={handleDrop}
+        onPointerDownCapture={handlePointerDownCapture}
+        onPointerUpCapture={clearDragSuppression}
+        onPointerCancel={clearDragSuppression}
+        onDragEnd={onDragEndTrack}
+        onContextMenu={handleContextMenu}
+        className={`flex flex-col justify-between h-24 border-b border-daw-border group transition-colors cursor-grab active:cursor-grabbing ${
+          isDragging
+            ? 'bg-daw-panel-light opacity-70'
+            : isDropTarget
+              ? 'bg-daw-accent/10 ring-1 ring-inset ring-daw-accent/50'
+              : 'bg-daw-panel hover:bg-daw-panel-light'
+        } ${track.hidden ? 'opacity-60' : ''}`}
+      >
         <input
-          type="range"
-          min="0"
-          max="100"
-          value={volumePct}
-          onChange={(e) => updateTrack(track.id, { volume: parseInt(e.target.value, 10) / 100 })}
-          className="w-full h-1.5 cursor-pointer rounded-full"
-          style={{
-            background: `linear-gradient(to right, rgba(16,185,129,0.8) 0%, rgba(16,185,129,0.8) ${volumePct}%, rgba(0,0,0,0.5) ${volumePct}%, rgba(0,0,0,0.5) 100%)`,
-          }}
-          title={`Volume: ${volumePct}%`}
+          ref={fileInputRef}
+          type="file"
+          accept="audio/*"
+          className="hidden"
+          onChange={handleFileChange}
         />
+        {/* Top: Name + Track number */}
+        <div className="px-2.5 pt-2">
+          <div className="flex items-center justify-between mb-1.5">
+            <span
+              className="text-[10px] font-bold tracking-[0.15em] uppercase truncate"
+              style={{ color: track.color }}
+            >
+              {track.displayName}
+            </span>
+            <span className="text-[9px] text-slate-600 font-mono">{String(track.order + 1).padStart(2, '0')}</span>
+          </div>
+
+          {/* Mute / Solo / Remove buttons */}
+          <div className="flex gap-1" data-no-track-drag="true">
+            <button
+              onClick={() => updateTrack(track.id, { hidden: !track.hidden })}
+              className={`w-5 h-4 text-[8px] font-bold flex items-center justify-center rounded transition-colors ${
+                track.hidden
+                  ? 'bg-slate-700/80 text-slate-200'
+                  : 'bg-black/40 text-slate-600 hover:text-white'
+              }`}
+              title={track.hidden ? 'Show track' : 'Hide track'}
+            >
+              <span className="material-symbols-outlined" style={{ fontSize: '10px' }}>
+                {track.hidden ? 'visibility_off' : 'visibility'}
+              </span>
+            </button>
+            <button
+              onClick={() => updateTrack(track.id, { muted: !track.muted })}
+              className={`w-5 h-4 text-[8px] font-bold flex items-center justify-center rounded transition-colors ${track.muted
+                ? 'bg-amber-600/80 text-white'
+                : 'bg-black/40 text-slate-600 hover:text-white'
+                }`}
+              title="Mute"
+            >
+              M
+            </button>
+            <button
+              onClick={() => updateTrack(track.id, { soloed: !track.soloed })}
+              className={`w-5 h-4 text-[8px] font-bold flex items-center justify-center rounded transition-colors ${track.soloed
+                ? 'bg-emerald-600/80 text-white'
+                : 'bg-black/40 text-slate-600 hover:text-white'
+                }`}
+              title="Solo"
+            >
+              S
+            </button>
+            <button
+              onClick={handleImportClick}
+              className="w-5 h-4 text-[8px] font-bold flex items-center justify-center rounded bg-black/40 text-slate-600 hover:text-blue-400 hover:bg-blue-900/30 transition-all"
+              title="Import audio to this track"
+            >
+              <span className="material-symbols-outlined" style={{ fontSize: '10px' }}>upload</span>
+            </button>
+            <button
+              onClick={handleDownloadTrack}
+              disabled={isDownloading}
+              className="w-5 h-4 text-[8px] font-bold flex items-center justify-center rounded bg-black/40 text-slate-300 hover:text-emerald-300 hover:bg-emerald-900/30 transition-all disabled:cursor-not-allowed"
+              title="Download this track as WAV"
+            >
+              <svg viewBox="0 0 16 16" width="10" height="10" fill="none" aria-hidden="true">
+                <path d="M8 2v7m0 0l-3-3m3 3l3-3M3 12h10" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </button>
+            <button
+              onClick={() => removeTrack(track.id)}
+              className="w-5 h-4 text-[8px] font-bold flex items-center justify-center rounded bg-black/40 text-slate-600 hover:text-red-400 hover:bg-red-900/30 transition-all ml-auto"
+              title="Remove track"
+            >
+              ×
+            </button>
+          </div>
+        </div>
+
+        {/* Bottom: Volume meter */}
+        <div className="px-2.5 pb-2" data-no-track-drag="true">
+          <input
+            type="range"
+            min="0"
+            max="100"
+            value={volumePct}
+            onChange={(e) => updateTrack(track.id, { volume: parseInt(e.target.value, 10) / 100 })}
+            className="w-full h-1.5 cursor-pointer rounded-full"
+            style={{
+              background: `linear-gradient(to right, rgba(16,185,129,0.8) 0%, rgba(16,185,129,0.8) ${volumePct}%, rgba(0,0,0,0.5) ${volumePct}%, rgba(0,0,0,0.5) 100%)`,
+            }}
+            title={`Volume: ${volumePct}%`}
+          />
+        </div>
       </div>
-    </div>
+
+      {ctxMenu && (
+        <TrackHeaderContextMenu
+          x={ctxMenu.x}
+          y={ctxMenu.y}
+          canExtract={!isExtracting && !isGenerating}
+          onExtract={() => { void handleExtractToTracks(); }}
+          onClose={closeCtxMenu}
+        />
+      )}
+    </>
   );
 }

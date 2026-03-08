@@ -10,6 +10,7 @@ import { snapTime } from '../../features/arrangement/snap';
 import { isArrangementClipSelected } from '../../features/arrangement/selection';
 import { estimateEtaSeconds, extractProgressPercent } from '../../features/generation/trackGenerationStatus';
 import { normalizeSeconds } from '../../utils/time';
+import { extractTrackToNewTracks } from '../../services/stemExtractionPipeline';
 
 interface ClipBlockProps {
   clip: Clip;
@@ -44,6 +45,7 @@ export function ClipBlock({ clip, track }: ClipBlockProps) {
   const getClipById = useProjectStore((s) => s.getClipById);
   const getTrackForClip = useProjectStore((s) => s.getTrackForClip);
   const generationJobs = useGenerationStore((s) => s.jobs);
+  const isGenerating = useGenerationStore((s) => s.isGenerating);
   const project = useProjectStore((s) => s.project);
   const workspace = useArrangementStore((s) =>
     project ? s.workspacesByProjectId[project.id] : undefined,
@@ -68,6 +70,7 @@ export function ClipBlock({ clip, track }: ClipBlockProps) {
   const repaintDragEndPxRef = useRef(0);
 
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
+  const [isExtracting, setIsExtracting] = useState(false);
   const [repaintSelectionPx, setRepaintSelectionPx] = useState<{ start: number; end: number } | null>(null);
   const [isHovered, setIsHovered] = useState(false);
   const [nowMs, setNowMs] = useState(() => Date.now());
@@ -354,6 +357,33 @@ export function ClipBlock({ clip, track }: ClipBlockProps) {
     const layerTrack = addTrack(sourceTrack?.trackName ?? 'custom');
     moveClipToTrack(duplicatedClip.id, layerTrack.id, { startTime: sourceClip.startTime });
   }, [addTrack, clip.id, duplicateClip, getClipById, getTrackForClip, moveClipToTrack]);
+  const handleExtractToTracks = useCallback(() => {
+    if (isExtracting || isGenerating) return;
+    closeCtxMenu();
+    setIsExtracting(true);
+    void (async () => {
+      try {
+        const result = await extractTrackToNewTracks(track.id);
+        const createdCount = result.createdTrackNames.length;
+        const skippedCount = result.skippedTrackNames.length;
+        const failedCount = result.failedTrackNames.length;
+        const lines: string[] = [];
+        lines.push(`Created ${createdCount} extracted track(s).`);
+        if (skippedCount > 0) lines.push(`Skipped ${skippedCount} silent stem(s).`);
+        if (failedCount > 0) lines.push(`Failed ${failedCount} stem(s).`);
+        if (typeof window !== 'undefined') {
+          window.alert(lines.join('\n'));
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Stem extraction failed';
+        if (typeof window !== 'undefined') {
+          window.alert(message);
+        }
+      } finally {
+        setIsExtracting(false);
+      }
+    })();
+  }, [closeCtxMenu, isExtracting, isGenerating, track.id]);
 
   const handleMouseMoveLocal = useCallback((e: React.MouseEvent) => {
     if (isShiftPressed || e.shiftKey) {
@@ -657,6 +687,8 @@ export function ClipBlock({ clip, track }: ClipBlockProps) {
           onCover={() => { closeCtxMenu(); openCoverDialog({ clipId: clip.id, referenceClipId: clip.id }); }}
           onDuplicate={() => { closeCtxMenu(); duplicateClip(clip.id); }}
           onDuplicateToNewLayer={() => { closeCtxMenu(); handleDuplicateToNewLayer(); }}
+          onExtractToTracks={handleExtractToTracks}
+          canExtractToTracks={!isExtracting && !isGenerating}
           onMergeSelected={handleMergeSelected}
           canMergeSelected={canMergeSelected}
           onDelete={() => { closeCtxMenu(); removeClip(clip.id); }}
@@ -677,6 +709,8 @@ function ClipContextMenu({
   onCover,
   onDuplicate,
   onDuplicateToNewLayer,
+  onExtractToTracks,
+  canExtractToTracks,
   onMergeSelected,
   canMergeSelected,
   onDelete,
@@ -691,6 +725,8 @@ function ClipContextMenu({
   onCover: () => void;
   onDuplicate: () => void;
   onDuplicateToNewLayer: () => void;
+  onExtractToTracks: () => void;
+  canExtractToTracks: boolean;
   onMergeSelected: () => void;
   canMergeSelected: boolean;
   onDelete: () => void;
@@ -741,6 +777,14 @@ function ClipContextMenu({
         >
           <span className="material-symbols-outlined text-xs">view_week</span>
           Duplicate to New Layer (Ctrl+Shift+D)
+        </button>
+        <button
+          onClick={onExtractToTracks}
+          disabled={!canExtractToTracks}
+          className="w-full text-left px-3 py-1.5 text-xs text-slate-300 hover:bg-white/5 transition-colors disabled:text-slate-700 disabled:cursor-not-allowed flex items-center gap-2"
+        >
+          <span className="material-symbols-outlined text-xs">call_split</span>
+          Extract To Tracks
         </button>
         {canMergeSelected && (
           <button
