@@ -9,6 +9,7 @@ import { hexToRgba } from '../../utils/color';
 import { snapTime } from '../../features/arrangement/snap';
 import { isArrangementClipSelected } from '../../features/arrangement/selection';
 import { estimateEtaSeconds, extractProgressPercent } from '../../features/generation/trackGenerationStatus';
+import { normalizeSeconds } from '../../utils/time';
 
 interface ClipBlockProps {
   clip: Clip;
@@ -29,6 +30,8 @@ export function ClipBlock({ clip, track }: ClipBlockProps) {
   const clipDragPreview = useUIStore((s) => s.clipDragPreview);
   const setClipDragPreview = useUIStore((s) => s.setClipDragPreview);
   const setClipGestureActive = useUIStore((s) => s.setClipGestureActive);
+  const isShiftPressed = useUIStore((s) => s.isShiftPressed);
+  const openRepaintDialog = useUIStore((s) => s.openRepaintDialog);
   const openExtendConfirmDialog = useUIStore((s) => s.openExtendConfirmDialog);
   const updateClip = useProjectStore((s) => s.updateClip);
   const moveClipToTrack = useProjectStore((s) => s.moveClipToTrack);
@@ -57,9 +60,25 @@ export function ClipBlock({ clip, track }: ClipBlockProps) {
   const isDraggingThisClip = clipDragPreview?.clipId === clip.id;
 
   const dragRef = useRef(false);
+  const repaintDragFrameRef = useRef<number | null>(null);
+  const repaintDragStartPxRef = useRef(0);
+  const repaintDragEndPxRef = useRef(0);
 
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
+  const [repaintSelectionPx, setRepaintSelectionPx] = useState<{ start: number; end: number } | null>(null);
+  const [isHovered, setIsHovered] = useState(false);
   const [nowMs, setNowMs] = useState(() => Date.now());
+
+  const flushRepaintSelectionFrame = useCallback(() => {
+    if (repaintDragFrameRef.current != null) return;
+    repaintDragFrameRef.current = window.requestAnimationFrame(() => {
+      repaintDragFrameRef.current = null;
+      setRepaintSelectionPx({
+        start: repaintDragStartPxRef.current,
+        end: repaintDragEndPxRef.current,
+      });
+    });
+  }, []);
 
   const getDragMode = useCallback((e: React.MouseEvent): DragMode => {
     const rect = e.currentTarget.getBoundingClientRect();
@@ -71,6 +90,65 @@ export function ClipBlock({ clip, track }: ClipBlockProps) {
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     if (e.button !== 0) return;
+    const isRepaintSelectionDrag = isShiftPressed || e.shiftKey;
+    if (isRepaintSelectionDrag) {
+      e.stopPropagation();
+      e.preventDefault();
+      const rect = e.currentTarget.getBoundingClientRect();
+      const clipEnd = clip.startTime + clip.duration;
+      const clampPx = (value: number) => Math.max(0, Math.min(value, rect.width));
+      const startPx = clampPx(e.clientX - rect.left);
+      let endPx = startPx;
+      const previousUserSelect = document.body.style.userSelect;
+      const previousCursor = document.body.style.cursor;
+      document.body.style.userSelect = 'none';
+      document.body.style.cursor = 'crosshair';
+      repaintDragStartPxRef.current = startPx;
+      repaintDragEndPxRef.current = startPx;
+      setRepaintSelectionPx({ start: startPx, end: startPx });
+
+      const onMouseMove = (ev: MouseEvent) => {
+        endPx = clampPx(ev.clientX - rect.left);
+        repaintDragStartPxRef.current = startPx;
+        repaintDragEndPxRef.current = endPx;
+        flushRepaintSelectionFrame();
+      };
+
+      const onMouseUp = () => {
+        window.removeEventListener('mousemove', onMouseMove);
+        window.removeEventListener('mouseup', onMouseUp);
+        window.removeEventListener('blur', onMouseUp);
+        document.body.style.userSelect = previousUserSelect;
+        document.body.style.cursor = previousCursor;
+        if (repaintDragFrameRef.current != null) {
+          window.cancelAnimationFrame(repaintDragFrameRef.current);
+          repaintDragFrameRef.current = null;
+        }
+        setRepaintSelectionPx(null);
+
+        const startPxClamped = Math.min(startPx, endPx);
+        const endPxClamped = Math.max(startPx, endPx);
+        const absoluteStart = clip.startTime + (startPxClamped / pixelsPerSecond);
+        const absoluteEnd = clip.startTime + (endPxClamped / pixelsPerSecond);
+        const repaintStart = normalizeSeconds(
+          Math.max(clip.startTime, Math.min(absoluteStart, clipEnd)),
+          3,
+        );
+        const repaintEnd = normalizeSeconds(
+          Math.max(repaintStart, Math.min(clipEnd, absoluteEnd)),
+          3,
+        );
+        if (repaintEnd - repaintStart >= 0.1) {
+          openRepaintDialog({ clipId: clip.id, startTime: repaintStart, endTime: repaintEnd });
+        }
+      };
+
+      window.addEventListener('mousemove', onMouseMove);
+      window.addEventListener('mouseup', onMouseUp);
+      window.addEventListener('blur', onMouseUp);
+      return;
+    }
+
     e.stopPropagation();
     e.preventDefault();
 
@@ -220,6 +298,9 @@ export function ClipBlock({ clip, track }: ClipBlockProps) {
     setClipDragPreview,
     setClipGestureActive,
     openExtendConfirmDialog,
+    isShiftPressed,
+    openRepaintDialog,
+    flushRepaintSelectionFrame,
     track.id,
     track.color,
     getDragMode,
@@ -255,6 +336,11 @@ export function ClipBlock({ clip, track }: ClipBlockProps) {
   }, [addTrack, clip.id, duplicateClip, getClipById, getTrackForClip, moveClipToTrack]);
 
   const handleMouseMoveLocal = useCallback((e: React.MouseEvent) => {
+    if (isShiftPressed || e.shiftKey) {
+      const el = e.currentTarget as HTMLElement;
+      el.style.cursor = 'crosshair';
+      return;
+    }
     const rect = e.currentTarget.getBoundingClientRect();
     const relX = e.clientX - rect.left;
     const el = e.currentTarget as HTMLElement;
@@ -263,7 +349,7 @@ export function ClipBlock({ clip, track }: ClipBlockProps) {
     } else {
       el.style.cursor = 'grab';
     }
-  }, []);
+  }, [isShiftPressed]);
 
   const statusStyles: Record<string, string> = {
     empty: 'opacity-60',
@@ -292,6 +378,20 @@ export function ClipBlock({ clip, track }: ClipBlockProps) {
   const visiblePeakCount = endPeakIdx - startPeakIdx;
   const numBars = peaks ? Math.min(visiblePeakCount, Math.floor(waveformWidthPx / 2)) : 0;
   const barSpacing = numBars > 0 ? waveformWidthPx / numBars : 0;
+  const waveformBars = useMemo(() => {
+    if (!peaks || numBars <= 0 || visiblePeakCount <= 0) return [];
+    return Array.from({ length: numBars }, (_, i) => {
+      const peakIdx = startPeakIdx + Math.floor((i / numBars) * visiblePeakCount);
+      const peak = peaks[Math.min(peakIdx, peaks.length - 1)];
+      const h = peak * 80;
+      return {
+        x: i * barSpacing,
+        y: 50 - h / 2,
+        width: Math.max(barSpacing * 0.7, 0.5),
+        height: Math.max(h, 1),
+      };
+    });
+  }, [barSpacing, numBars, peaks, startPeakIdx, visiblePeakCount]);
   const activeJob = useMemo(
     () =>
       generationJobs.find((job) => (
@@ -300,6 +400,23 @@ export function ClipBlock({ clip, track }: ClipBlockProps) {
       )) ?? null,
     [clip.id, generationJobs],
   );
+  const activeJobRepaintRegionPx = useMemo(() => {
+    if (!activeJob || activeJob.repaintStartTime == null || activeJob.repaintEndTime == null) {
+      return null;
+    }
+    const clipStart = clip.startTime;
+    const clipEnd = clip.startTime + clip.duration;
+    const start = Math.max(clipStart, Math.min(activeJob.repaintStartTime, clipEnd));
+    const end = Math.max(start, Math.min(clipEnd, activeJob.repaintEndTime));
+    const leftPx = Math.max(0, (start - clipStart) * pixelsPerSecond);
+    const widthPx = Math.max(1, (end - start) * pixelsPerSecond);
+    return { leftPx, widthPx };
+  }, [activeJob, clip.startTime, clip.duration, pixelsPerSecond]);
+  const clipStatusClass =
+    activeJobRepaintRegionPx
+    && (clip.generationStatus === 'queued' || clip.generationStatus === 'generating' || clip.generationStatus === 'processing')
+      ? ''
+      : (statusStyles[clip.generationStatus] ?? '');
   const compactStatusLabel = useMemo(() => {
     if (!activeJob) return null;
     if (activeJob.status === 'queued') return 'Queued';
@@ -316,15 +433,43 @@ export function ClipBlock({ clip, track }: ClipBlockProps) {
     const intervalId = window.setInterval(() => setNowMs(Date.now()), 1000);
     return () => window.clearInterval(intervalId);
   }, [activeJob?.id]);
+  const shouldShowWaveform =
+    peaks
+    && (numBars > 0 || extensionWidthPx > 1)
+    && (clip.generationStatus === 'ready' || clip.generationStatus === 'stale' || activeJob !== null);
+  const repaintSelectionMeta = useMemo(() => {
+    if (!repaintSelectionPx) return null;
+    const clipEnd = clip.startTime + clip.duration;
+    const startPx = Math.min(repaintSelectionPx.start, repaintSelectionPx.end);
+    const endPx = Math.max(repaintSelectionPx.start, repaintSelectionPx.end);
+    const startTime = normalizeSeconds(
+      Math.max(clip.startTime, Math.min(clip.startTime + (startPx / pixelsPerSecond), clipEnd)),
+      2,
+    );
+    const endTime = normalizeSeconds(
+      Math.max(startTime, Math.min(clip.startTime + (endPx / pixelsPerSecond), clipEnd)),
+      2,
+    );
+    const duration = normalizeSeconds(endTime - startTime, 2);
+    return { startTime, endTime, duration };
+  }, [clip.duration, clip.startTime, pixelsPerSecond, repaintSelectionPx]);
+
+  useEffect(() => () => {
+    if (repaintDragFrameRef.current != null) {
+      window.cancelAnimationFrame(repaintDragFrameRef.current);
+      repaintDragFrameRef.current = null;
+    }
+  }, []);
 
   return (
     <>
       <div
         data-clip-id={clip.id}
         className={`absolute top-1 bottom-1 rounded select-none overflow-hidden border border-white/10
-          ${statusStyles[clip.generationStatus] ?? ''}
+          ${clipStatusClass}
           ${arrangementSelected || hideInactiveTakes ? '' : 'opacity-40'}
           ${isSelected ? 'ring-1 ring-daw-accent ring-offset-1 ring-offset-transparent' : ''}
+          ${isHovered ? 'ring-1 ring-amber-400/60' : ''}
           ${isDraggingThisClip ? 'opacity-50' : ''}
         `}
         style={{
@@ -336,6 +481,8 @@ export function ClipBlock({ clip, track }: ClipBlockProps) {
         onClick={handleClick}
         onDoubleClick={handleDoubleClick}
         onMouseMove={handleMouseMoveLocal}
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => setIsHovered(false)}
         onContextMenu={handleContextMenu}
       >
         {/* Resize handles */}
@@ -343,7 +490,7 @@ export function ClipBlock({ clip, track }: ClipBlockProps) {
         <div className="absolute top-0 bottom-0 right-0 w-[6px] cursor-col-resize z-10" />
 
         {/* Waveform */}
-        {(clip.generationStatus === 'ready' || clip.generationStatus === 'stale') && peaks && (numBars > 0 || extensionWidthPx > 1) && (
+        {shouldShowWaveform && (
           <div className="absolute inset-0 overflow-hidden">
             {numBars > 0 && (
               <svg
@@ -353,21 +500,16 @@ export function ClipBlock({ clip, track }: ClipBlockProps) {
                 preserveAspectRatio="none"
                 className="opacity-50 ml-0.5"
               >
-                {Array.from({ length: numBars }, (_, i) => {
-                  const peakIdx = startPeakIdx + Math.floor((i / numBars) * visiblePeakCount);
-                  const peak = peaks[Math.min(peakIdx, peaks.length - 1)];
-                  const h = peak * 80;
-                  return (
-                    <rect
-                      key={i}
-                      x={i * barSpacing}
-                      y={50 - h / 2}
-                      width={Math.max(barSpacing * 0.7, 0.5)}
-                      height={Math.max(h, 1)}
-                      fill={track.color}
-                    />
-                  );
-                })}
+                {waveformBars.map((bar, i) => (
+                  <rect
+                    key={i}
+                    x={bar.x}
+                    y={bar.y}
+                    width={bar.width}
+                    height={bar.height}
+                    fill={track.color}
+                  />
+                ))}
               </svg>
             )}
             {extensionWidthPx > 1 && (
@@ -384,6 +526,22 @@ export function ClipBlock({ clip, track }: ClipBlockProps) {
           {clip.prompt || '(no prompt)'}
         </div>
 
+        {repaintSelectionPx && (
+          <div
+            className="absolute top-0 bottom-0 bg-amber-400/25 border-x border-amber-300/70 pointer-events-none z-20"
+            style={{
+              left: Math.min(repaintSelectionPx.start, repaintSelectionPx.end),
+              width: Math.max(1, Math.abs(repaintSelectionPx.end - repaintSelectionPx.start)),
+            }}
+          >
+            {repaintSelectionMeta && (
+              <div className="absolute bottom-1 left-1/2 -translate-x-1/2 text-[8px] font-semibold text-amber-200 whitespace-nowrap px-1 py-0.5 rounded bg-black/50 border border-amber-200/30">
+                {repaintSelectionMeta.startTime.toFixed(2)}s - {repaintSelectionMeta.endTime.toFixed(2)}s ({repaintSelectionMeta.duration.toFixed(2)}s)
+              </div>
+            )}
+          </div>
+        )}
+
         {isArrangementClip && (
           <div
             className={`absolute top-1 right-1 px-1.5 py-0.5 rounded text-[8px] uppercase tracking-wider font-bold ${
@@ -396,16 +554,53 @@ export function ClipBlock({ clip, track }: ClipBlockProps) {
 
         {/* Status indicator */}
         {clip.generationStatus === 'generating' && (
-          <div className="absolute inset-0 flex items-center justify-center pointer-events-none bg-black/20">
-            <div className="flex flex-col items-center gap-1">
-              <div className="w-4 h-4 border-2 border-daw-accent border-t-transparent rounded-full animate-spin" />
-              {compactStatusLabel && (
-                <div className="text-[8px] font-semibold text-daw-accent/95 whitespace-nowrap px-1 py-0.5 rounded bg-black/45 border border-daw-accent/30">
-                  {compactStatusLabel}
-                </div>
-              )}
+          activeJobRepaintRegionPx ? (
+            <div
+              className="absolute top-0 bottom-0 pointer-events-none bg-black/25 border-x border-daw-accent/45 z-20 flex items-center justify-center"
+              style={{
+                left: activeJobRepaintRegionPx.leftPx,
+                width: activeJobRepaintRegionPx.widthPx,
+              }}
+            >
+              <div className="flex flex-col items-center gap-1 px-1">
+                <div className="w-4 h-4 border-2 border-daw-accent border-t-transparent rounded-full animate-spin" />
+                {compactStatusLabel && (
+                  <div className="text-[8px] font-semibold text-daw-accent/95 whitespace-nowrap px-1 py-0.5 rounded bg-black/45 border border-daw-accent/30">
+                    {compactStatusLabel}
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
+          ) : (
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none bg-black/20">
+              <div className="flex flex-col items-center gap-1">
+                <div className="w-4 h-4 border-2 border-daw-accent border-t-transparent rounded-full animate-spin" />
+                {compactStatusLabel && (
+                  <div className="text-[8px] font-semibold text-daw-accent/95 whitespace-nowrap px-1 py-0.5 rounded bg-black/45 border border-daw-accent/30">
+                    {compactStatusLabel}
+                  </div>
+                )}
+              </div>
+            </div>
+          )
+        )}
+        {clip.generationStatus === 'processing' && activeJobRepaintRegionPx && (
+          <div
+            className="absolute top-0 bottom-0 pointer-events-none bg-black/20 border-x border-emerald-300/45 z-20"
+            style={{
+              left: activeJobRepaintRegionPx.leftPx,
+              width: activeJobRepaintRegionPx.widthPx,
+            }}
+          />
+        )}
+        {clip.generationStatus === 'queued' && activeJobRepaintRegionPx && (
+          <div
+            className="absolute top-0 bottom-0 pointer-events-none bg-black/15 border-x border-slate-300/40 z-20"
+            style={{
+              left: activeJobRepaintRegionPx.leftPx,
+              width: activeJobRepaintRegionPx.widthPx,
+            }}
+          />
         )}
         {clip.generationStatus === 'queued' && compactStatusLabel && (
           <div className="absolute bottom-1 left-2 text-[8px] text-slate-300 truncate pointer-events-none">

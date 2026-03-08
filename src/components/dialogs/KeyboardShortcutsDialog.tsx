@@ -11,6 +11,7 @@ const ACTION_LABELS: Record<ShortcutAction, string> = {
 const BUILT_IN_SHORTCUTS = [
   { label: 'Duplicate selected clips', keys: ['Ctrl', 'D'] },
   { label: 'Duplicate to new layer', keys: ['Ctrl', 'Shift', 'D'] },
+  { label: 'Hold for repaint drag-select', keys: ['Shift + Drag'] },
 ] as const;
 
 function formatKeyCode(code: string): string {

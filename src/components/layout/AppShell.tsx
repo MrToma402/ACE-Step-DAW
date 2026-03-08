@@ -15,6 +15,7 @@ import { SettingsDialog } from '../dialogs/SettingsDialog';
 import { ProjectListDialog } from '../dialogs/ProjectListDialog';
 import { KeyboardShortcutsDialog } from '../dialogs/KeyboardShortcutsDialog';
 import { ExtendConfirmDialog } from '../dialogs/ExtendConfirmDialog';
+import { RepaintDialog } from '../dialogs/RepaintDialog';
 import { useAudioEngine } from '../../hooks/useAudioEngine';
 import { useProjectStore } from '../../store/projectStore';
 import { useUIStore } from '../../store/uiStore';
@@ -42,6 +43,7 @@ export function AppShell() {
   const showProjectListDialog = useUIStore((s) => s.showProjectListDialog);
   const editingClipId = useUIStore((s) => s.editingClipId);
   const extendConfirmRequest = useUIStore((s) => s.extendConfirmRequest);
+  const repaintRequest = useUIStore((s) => s.repaintRequest);
   const selectedClipIds = useUIStore((s) => s.selectedClipIds);
   const deselectAll = useUIStore((s) => s.deselectAll);
   const shortcutBindings = useUIStore((s) => s.shortcutBindings);
@@ -53,6 +55,8 @@ export function AppShell() {
   const setShowKeyboardShortcutsDialog = useUIStore((s) => s.setShowKeyboardShortcutsDialog);
   const setEditingClip = useUIStore((s) => s.setEditingClip);
   const closeExtendConfirmDialog = useUIStore((s) => s.closeExtendConfirmDialog);
+  const closeRepaintDialog = useUIStore((s) => s.closeRepaintDialog);
+  const setShiftPressed = useUIStore((s) => s.setShiftPressed);
   const ensureProjectWorkspace = useArrangementStore((s) => s.ensureProjectWorkspace);
   const { isPlaying, play, pause } = useTransport();
   const { sidebarWidth, mixerHeight, startSidebarResize, startMixerResize } = useDawLayoutResize();
@@ -76,6 +80,25 @@ export function AppShell() {
   }, [project?.id, project?.totalDuration, ensureProjectWorkspace]);
 
   useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Shift') setShiftPressed(true);
+    };
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.key === 'Shift') setShiftPressed(false);
+    };
+    const handleBlur = () => setShiftPressed(false);
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    window.addEventListener('blur', handleBlur);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+      window.removeEventListener('blur', handleBlur);
+      setShiftPressed(false);
+    };
+  }, [setShiftPressed]);
+
+  useEffect(() => {
     const closeTopmostOverlay = (): boolean => {
       if (showKeyboardShortcutsDialog) {
         setShowKeyboardShortcutsDialog(false);
@@ -83,6 +106,10 @@ export function AppShell() {
       }
       if (extendConfirmRequest) {
         closeExtendConfirmDialog();
+        return true;
+      }
+      if (repaintRequest) {
+        closeRepaintDialog();
         return true;
       }
       if (editingClipId) {
@@ -191,8 +218,10 @@ export function AppShell() {
     showProjectListDialog,
     editingClipId,
     extendConfirmRequest,
+    repaintRequest,
     shortcutBindings,
     closeExtendConfirmDialog,
+    closeRepaintDialog,
     setEditingClip,
     setShowExportDialog,
     setShowInstrumentPicker,
@@ -297,6 +326,7 @@ export function AppShell() {
       <KeyboardShortcutsDialog />
       <ProjectListDialog />
       <ExtendConfirmDialog />
+      <RepaintDialog />
     </div>
   );
 }

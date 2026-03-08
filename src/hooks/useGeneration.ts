@@ -1,7 +1,12 @@
 import { useCallback } from 'react';
 import { useGenerationStore } from '../store/generationStore';
 import { useProjectStore } from '../store/projectStore';
-import { generateAllTracks, generateClipWithContext, generateSingleClip } from '../services/generationPipeline';
+import {
+  generateAllTracks,
+  generateClipWithContext,
+  generateSingleClip,
+  generateSingleClipRepaint,
+} from '../services/generationPipeline';
 import { loadAudioBlobByKey } from '../services/audioFileManager';
 import type { Project, Track, Clip } from '../types/project';
 
@@ -119,5 +124,21 @@ export function useGeneration() {
     }
   }, [project, isGenerating, getClipById, setIsGenerating]);
 
-  return { jobs, isGenerating, generateAll, generateClip, generateClipWithSourceContext };
+  const repaintClipRegion = useCallback(async (
+    clipId: string,
+    repaintStartTime: number,
+    repaintEndTime: number,
+  ) => {
+    if (!project || isGenerating) return;
+    await generateSingleClipRepaint(clipId, repaintStartTime, repaintEndTime);
+  }, [project, isGenerating]);
+
+  return {
+    jobs,
+    isGenerating,
+    generateAll,
+    generateClip,
+    generateClipWithSourceContext,
+    repaintClipRegion,
+  };
 }

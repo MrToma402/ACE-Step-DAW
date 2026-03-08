@@ -4,6 +4,8 @@ export interface GenerationJob {
   id: string;
   clipId: string;
   trackName: string;
+  repaintStartTime?: number;
+  repaintEndTime?: number;
   status: 'queued' | 'generating' | 'processing' | 'done' | 'error';
   progress: string;
   startedAt: number;

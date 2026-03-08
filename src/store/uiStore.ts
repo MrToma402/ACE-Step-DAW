@@ -25,6 +25,12 @@ export interface ExtendConfirmRequest {
   originalGenerationStatus: 'empty' | 'queued' | 'generating' | 'processing' | 'ready' | 'error' | 'stale';
 }
 
+export interface RepaintRequest {
+  clipId: string;
+  startTime: number;
+  endTime: number;
+}
+
 interface UIState {
   activeTab: ActiveTab;
   pixelsPerSecond: number;
@@ -40,6 +46,8 @@ interface UIState {
   showProjectListDialog: boolean;
   showKeyboardShortcutsDialog: boolean;
   extendConfirmRequest: ExtendConfirmRequest | null;
+  repaintRequest: RepaintRequest | null;
+  isShiftPressed: boolean;
   showMixer: boolean;
   shortcutBindings: ShortcutBindings;
   clipDragPreview: ClipDragPreview | null;
@@ -63,6 +71,9 @@ interface UIState {
   setShowKeyboardShortcutsDialog: (v: boolean) => void;
   openExtendConfirmDialog: (request: ExtendConfirmRequest) => void;
   closeExtendConfirmDialog: () => void;
+  openRepaintDialog: (request: RepaintRequest) => void;
+  closeRepaintDialog: () => void;
+  setShiftPressed: (pressed: boolean) => void;
   setShortcutBinding: (action: keyof ShortcutBindings, keyCode: string) => void;
   resetShortcutBindings: () => void;
   setClipDragPreview: (preview: ClipDragPreview | null) => void;
@@ -91,6 +102,8 @@ export const useUIStore = create<UIState>((set) => ({
   showProjectListDialog: false,
   showKeyboardShortcutsDialog: false,
   extendConfirmRequest: null,
+  repaintRequest: null,
+  isShiftPressed: false,
   showMixer: true,
   shortcutBindings: DEFAULT_SHORTCUT_BINDINGS,
   clipDragPreview: null,
@@ -139,6 +152,9 @@ export const useUIStore = create<UIState>((set) => ({
   setShowKeyboardShortcutsDialog: (v) => set({ showKeyboardShortcutsDialog: v }),
   openExtendConfirmDialog: (request) => set({ extendConfirmRequest: request }),
   closeExtendConfirmDialog: () => set({ extendConfirmRequest: null }),
+  openRepaintDialog: (request) => set({ repaintRequest: request }),
+  closeRepaintDialog: () => set({ repaintRequest: null }),
+  setShiftPressed: (pressed) => set({ isShiftPressed: pressed }),
   setShortcutBinding: (action, keyCode) =>
     set((s) => ({
       shortcutBindings: {
