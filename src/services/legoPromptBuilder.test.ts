@@ -75,11 +75,20 @@ test('buildLegoPromptContent does not include tempo/key/time anchors in caption'
   assert.ok(!result.prompt.includes('Time signature anchor:'));
 });
 
-test('buildLegoPromptContent keeps instruction minimal with only track name', () => {
+test('buildLegoPromptContent uses Gradio lego instruction template', () => {
   const result = buildLegoPromptContent({
     clip: makeClip(''),
     track: makeTrack(),
   });
 
-  assert.equal(result.instruction, 'WOODWINDS');
+  assert.equal(result.instruction, 'Generate the WOODWINDS track based on the audio context:');
+});
+
+test('buildLegoPromptContent keeps underscore naming like Gradio track_name.upper()', () => {
+  const result = buildLegoPromptContent({
+    clip: makeClip(''),
+    track: makeTrack({ trackName: 'backing_vocals' }),
+  });
+
+  assert.equal(result.instruction, 'Generate the BACKING_VOCALS track based on the audio context:');
 });

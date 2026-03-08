@@ -10,6 +10,10 @@ interface BuildLegoPromptArgs {
   track: Track;
 }
 
+function buildLegoInstruction(trackName: string): string {
+  return `Generate the ${trackName.toUpperCase()} track based on the audio context:`;
+}
+
 function appendSentence(lines: string[], value: string | null): void {
   const trimmed = value?.trim();
   if (!trimmed) return;
@@ -28,7 +32,7 @@ export function buildLegoPromptContent(args: BuildLegoPromptArgs): LegoPromptCon
   }
 
   return {
-    instruction: args.track.trackName.toUpperCase().replace('_', ' '),
+    instruction: buildLegoInstruction(args.track.trackName),
     prompt: promptLines.join('\n'),
   };
 }
