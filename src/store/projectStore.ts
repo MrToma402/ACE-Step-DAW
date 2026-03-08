@@ -88,23 +88,6 @@ export const useProjectStore = create<ProjectState>()(
       setProject: (project) => set({ project }),
 
       createProject: (params) => {
-        // Build 4 default tracks: Vocals, Drums, Bass, Guitar
-        const defaultTrackNames: TrackName[] = ['vocals', 'drums', 'bass', 'guitar'];
-        const defaultTracks: Track[] = defaultTrackNames.map((trackName, i) => {
-          const info = TRACK_CATALOG[trackName];
-          return {
-            id: uuidv4(),
-            trackName,
-            displayName: info.displayName,
-            color: info.color,
-            order: defaultTrackNames.length - i, // vocals=4, drums=3, bass=2, guitar=1
-            volume: 0.8,
-            muted: false,
-            soloed: false,
-            clips: [],
-          };
-        });
-
         const project: Project = {
           id: uuidv4(),
           name: params?.name ?? DEFAULT_PROJECT_NAME,
@@ -114,7 +97,7 @@ export const useProjectStore = create<ProjectState>()(
           keyScale: params?.keyScale ?? DEFAULT_KEY_SCALE,
           timeSignature: params?.timeSignature ?? DEFAULT_TIME_SIGNATURE,
           totalDuration: MIN_TIMELINE_DURATION,
-          tracks: defaultTracks,
+          tracks: [],
           generationDefaults: { ...DEFAULT_GENERATION },
         };
         set({ project });
