@@ -11,9 +11,11 @@ import {
   DEFAULT_GENERATION,
 } from '../constants/defaults';
 import { saveProject as saveProjectToIDB } from '../services/projectStorage';
-import { deleteAudioBlob } from '../services/audioFileManager';
+import { deleteAudioBlob, saveAudioBlob } from '../services/audioFileManager';
 import { reorderTracksByTarget } from './trackOrder';
 import { resolveClipMusicalOverrides } from './clipMusicalDefaults';
+import { buildClipMergePlan } from '../features/timeline/clipMergePlan';
+import { buildMergedClipAudio } from '../features/timeline/clipMergeAudio';
 
 const MIN_TIMELINE_DURATION = 30; // seconds
 const TIMELINE_PADDING = 10;      // seconds beyond last clip
@@ -39,6 +41,7 @@ interface ProjectState {
   moveClipToTrack: (clipId: string, targetTrackId: string, updates?: Partial<Clip>) => void;
   removeClip: (clipId: string) => void;
   duplicateClip: (clipId: string) => Clip | undefined;
+  mergeClips: (clipIds: string[]) => Promise<{ clip: Clip | null; reason: string | null }>;
   updateClipStatus: (clipId: string, status: ClipGenerationStatus, extra?: Partial<Clip>) => void;
 
   getTrackById: (trackId: string) => Track | undefined;
@@ -78,6 +81,30 @@ function findNextDuplicateStart(sourceClip: Clip, trackClips: Clip[]): number {
     if (!blockingClip) return candidateStart;
     candidateStart = blockingClip.startTime + blockingClip.duration;
   }
+}
+
+function mapProjectClipsById(project: Project): Map<string, Clip> {
+  const byId = new Map<string, Clip>();
+  for (const track of project.tracks) {
+    for (const clip of track.clips) {
+      byId.set(clip.id, clip);
+    }
+  }
+  return byId;
+}
+
+function buildMergedPrompt(clips: Clip[]): string {
+  return clips
+    .map((clip) => clip.prompt.trim())
+    .filter((prompt) => prompt.length > 0)
+    .join(' | ');
+}
+
+function buildMergedLyrics(clips: Clip[]): string {
+  return clips
+    .map((clip) => clip.lyrics.trim())
+    .filter((lyrics) => lyrics.length > 0)
+    .join('\n\n');
 }
 
 export const useProjectStore = create<ProjectState>()(
@@ -374,6 +401,140 @@ export const useProjectStore = create<ProjectState>()(
         });
 
         return newClip;
+      },
+
+      mergeClips: async (clipIds) => {
+        const state = get();
+        if (!state.project) return { clip: null, reason: 'No project is loaded.' };
+        if (clipIds.length < 2) return { clip: null, reason: 'Select at least two clips to merge.' };
+
+        const clipById = mapProjectClipsById(state.project);
+        const candidateClips = clipIds
+          .map((clipId) => clipById.get(clipId))
+          .filter((clip): clip is Clip => Boolean(clip));
+
+        if (candidateClips.length !== clipIds.length) {
+          return { clip: null, reason: 'Some selected clips no longer exist.' };
+        }
+
+        const mergePlan = buildClipMergePlan(candidateClips);
+        if (!mergePlan) {
+          return {
+            clip: null,
+            reason: 'Merge requires clips on the same track with no timeline gap between them.',
+          };
+        }
+
+        const orderedClips = mergePlan.orderedClipIds
+          .map((clipId) => clipById.get(clipId))
+          .filter((clip): clip is Clip => Boolean(clip));
+        if (orderedClips.length < 2) {
+          return { clip: null, reason: 'Not enough valid clips to merge.' };
+        }
+
+        const firstClip = orderedClips[0];
+        const mergedClip: Clip = {
+          ...firstClip,
+          id: uuidv4(),
+          trackId: mergePlan.trackId,
+          startTime: mergePlan.startTime,
+          duration: mergePlan.endTime - mergePlan.startTime,
+          prompt: buildMergedPrompt(orderedClips),
+          lyrics: buildMergedLyrics(orderedClips),
+          generationJobId: null,
+          errorMessage: undefined,
+        };
+
+        const allSourcesWithAudio = orderedClips.every(
+          (clip) => typeof clip.isolatedAudioKey === 'string' && clip.isolatedAudioKey.length > 0,
+        );
+        const containsAnyAudio = orderedClips.some(
+          (clip) => typeof clip.isolatedAudioKey === 'string' && clip.isolatedAudioKey.length > 0,
+        );
+
+        if (containsAnyAudio && !allSourcesWithAudio) {
+          return {
+            clip: null,
+            reason: 'For audio merge, every selected clip must have stored audio.',
+          };
+        }
+
+        const latestProjectBeforeSave = get().project;
+        if (!latestProjectBeforeSave || latestProjectBeforeSave.id !== state.project.id) {
+          return { clip: null, reason: 'Project changed while merging. Please retry.' };
+        }
+
+        if (allSourcesWithAudio) {
+          const audioSources = orderedClips.map((clip) => ({
+            isolatedAudioKey: clip.isolatedAudioKey as string,
+            startTime: clip.startTime,
+            duration: clip.duration,
+            audioOffset: clip.audioOffset ?? 0,
+          }));
+          const { merged, reason } = await buildMergedClipAudio(
+            audioSources,
+            mergePlan.startTime,
+            mergePlan.endTime,
+          );
+          if (!merged) {
+            return {
+              clip: null,
+              reason: reason ?? 'Failed to merge clip audio.',
+            };
+          }
+
+          const isolatedKey = await saveAudioBlob(
+            latestProjectBeforeSave.id,
+            mergedClip.id,
+            'isolated',
+            merged.blob,
+          );
+          mergedClip.generationStatus = 'ready';
+          mergedClip.cumulativeMixKey = null;
+          mergedClip.isolatedAudioKey = isolatedKey;
+          mergedClip.waveformPeaks = merged.waveformPeaks;
+          mergedClip.audioDuration = merged.audioDuration;
+          mergedClip.audioOffset = 0;
+        } else {
+          mergedClip.generationStatus = 'empty';
+          mergedClip.generationJobId = null;
+          mergedClip.cumulativeMixKey = null;
+          mergedClip.isolatedAudioKey = null;
+          mergedClip.waveformPeaks = null;
+          mergedClip.audioDuration = undefined;
+          mergedClip.audioOffset = undefined;
+        }
+
+        for (const clip of orderedClips) {
+          void deleteAudioBlob(latestProjectBeforeSave.id, clip.id, 'cumulative');
+          void deleteAudioBlob(latestProjectBeforeSave.id, clip.id, 'isolated');
+        }
+
+        const selectedClipIdSet = new Set(mergePlan.orderedClipIds);
+        set((current) => {
+          const currentProject = current.project;
+          if (!currentProject || currentProject.id !== latestProjectBeforeSave.id) {
+            return current;
+          }
+          const newTracks = currentProject.tracks.map((track) => {
+            if (track.id !== mergePlan.trackId) return track;
+            const remaining = track.clips.filter((clip) => !selectedClipIdSet.has(clip.id));
+            return {
+              ...track,
+              clips: [...remaining, mergedClip],
+            };
+          });
+          return {
+            project: {
+              ...currentProject,
+              updatedAt: Date.now(),
+              totalDuration: computeTotalDuration(newTracks),
+              tracks: newTracks,
+            },
+          };
+        });
+
+        return { clip: mergedClip, reason: null };
       },
 
       updateClipStatus: (clipId, status, extra) => {

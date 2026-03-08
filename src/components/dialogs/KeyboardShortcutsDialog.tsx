@@ -6,6 +6,7 @@ type ShortcutAction = keyof ShortcutBindings;
 const ACTION_LABELS: Record<ShortcutAction, string> = {
   playPause: 'Play / Pause',
   deleteSelected: 'Delete selected clips',
+  mergeSelected: 'Merge selected clips',
 };
 
 const BUILT_IN_SHORTCUTS = [

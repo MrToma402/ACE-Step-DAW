@@ -32,6 +32,7 @@ export function AppShell() {
   const project = useProjectStore((s) => s.project);
   const removeClip = useProjectStore((s) => s.removeClip);
   const duplicateClip = useProjectStore((s) => s.duplicateClip);
+  const mergeClips = useProjectStore((s) => s.mergeClips);
   const addTrack = useProjectStore((s) => s.addTrack);
   const moveClipToTrack = useProjectStore((s) => s.moveClipToTrack);
   const getClipById = useProjectStore((s) => s.getClipById);
@@ -50,6 +51,7 @@ export function AppShell() {
   const repaintRequest = useUIStore((s) => s.repaintRequest);
   const coverRequest = useUIStore((s) => s.coverRequest);
   const selectedClipIds = useUIStore((s) => s.selectedClipIds);
+  const selectClip = useUIStore((s) => s.selectClip);
   const deselectAll = useUIStore((s) => s.deselectAll);
   const shortcutBindings = useUIStore((s) => s.shortcutBindings);
   const setShowNewProjectDialog = useUIStore((s) => s.setShowNewProjectDialog);
@@ -202,6 +204,24 @@ export function AppShell() {
         return;
       }
 
+      if (e.code === shortcutBindings.mergeSelected) {
+        if (activeTab !== 'daw' || selectedClipIds.size < 2) return;
+        if (e.repeat) return;
+        e.preventDefault();
+        const selectedIds = Array.from(selectedClipIds);
+        void (async () => {
+          const { clip, reason } = await mergeClips(selectedIds);
+          if (clip) {
+            selectClip(clip.id, false);
+            return;
+          }
+          if (reason && typeof window !== 'undefined') {
+            window.alert(reason);
+          }
+        })();
+        return;
+      }
+
       if (e.code === shortcutBindings.deleteSelected) {
         if (activeTab !== 'daw' || selectedClipIds.size === 0) return;
         e.preventDefault();
@@ -221,11 +241,13 @@ export function AppShell() {
     play,
     removeClip,
     duplicateClip,
+    mergeClips,
     addTrack,
     moveClipToTrack,
     getClipById,
     getTrackForClip,
     selectedClipIds,
+    selectClip,
     showKeyboardShortcutsDialog,
     showNewProjectDialog,
     showInstrumentPicker,

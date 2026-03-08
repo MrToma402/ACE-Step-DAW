@@ -40,6 +40,7 @@ export function ClipBlock({ clip, track }: ClipBlockProps) {
   const addTrack = useProjectStore((s) => s.addTrack);
   const removeClip = useProjectStore((s) => s.removeClip);
   const duplicateClip = useProjectStore((s) => s.duplicateClip);
+  const mergeClips = useProjectStore((s) => s.mergeClips);
   const getClipById = useProjectStore((s) => s.getClipById);
   const getTrackForClip = useProjectStore((s) => s.getTrackForClip);
   const generationJobs = useGenerationStore((s) => s.jobs);
@@ -328,6 +329,22 @@ export function ClipBlock({ clip, track }: ClipBlockProps) {
   }, []);
 
   const closeCtxMenu = useCallback(() => setCtxMenu(null), []);
+  const canMergeSelected = selectedClipIds.size >= 2 && selectedClipIds.has(clip.id);
+  const handleMergeSelected = useCallback(() => {
+    if (!canMergeSelected) return;
+    closeCtxMenu();
+    const selectedIds = Array.from(selectedClipIds);
+    void (async () => {
+      const { clip: mergedClip, reason } = await mergeClips(selectedIds);
+      if (mergedClip) {
+        selectClip(mergedClip.id, false);
+        return;
+      }
+      if (reason && typeof window !== 'undefined') {
+        window.alert(reason);
+      }
+    })();
+  }, [canMergeSelected, closeCtxMenu, mergeClips, selectClip, selectedClipIds]);
   const handleDuplicateToNewLayer = useCallback(() => {
     const sourceClip = getClipById(clip.id);
     if (!sourceClip) return;
@@ -640,6 +657,8 @@ export function ClipBlock({ clip, track }: ClipBlockProps) {
           onCover={() => { closeCtxMenu(); openCoverDialog({ clipId: clip.id, referenceClipId: clip.id }); }}
           onDuplicate={() => { closeCtxMenu(); duplicateClip(clip.id); }}
           onDuplicateToNewLayer={() => { closeCtxMenu(); handleDuplicateToNewLayer(); }}
+          onMergeSelected={handleMergeSelected}
+          canMergeSelected={canMergeSelected}
           onDelete={() => { closeCtxMenu(); removeClip(clip.id); }}
           onClose={closeCtxMenu}
           hasPrompt={!!clip.prompt}
@@ -651,7 +670,19 @@ export function ClipBlock({ clip, track }: ClipBlockProps) {
 }
 
 function ClipContextMenu({
-  x, y, onEdit, onGenerate, onCover, onDuplicate, onDuplicateToNewLayer, onDelete, onClose, hasPrompt, hasReferenceAudio,
+  x,
+  y,
+  onEdit,
+  onGenerate,
+  onCover,
+  onDuplicate,
+  onDuplicateToNewLayer,
+  onMergeSelected,
+  canMergeSelected,
+  onDelete,
+  onClose,
+  hasPrompt,
+  hasReferenceAudio,
 }: {
   x: number;
   y: number;
@@ -660,6 +691,8 @@ function ClipContextMenu({
   onCover: () => void;
   onDuplicate: () => void;
   onDuplicateToNewLayer: () => void;
+  onMergeSelected: () => void;
+  canMergeSelected: boolean;
   onDelete: () => void;
   onClose: () => void;
   hasPrompt: boolean;
@@ -709,6 +742,15 @@ function ClipContextMenu({
           <span className="material-symbols-outlined text-xs">view_week</span>
           Duplicate to New Layer (Ctrl+Shift+D)
         </button>
+        {canMergeSelected && (
+          <button
+            onClick={onMergeSelected}
+            className="w-full text-left px-3 py-1.5 text-xs text-slate-300 hover:bg-white/5 transition-colors flex items-center gap-2"
+          >
+            <span className="material-symbols-outlined text-xs">merge_type</span>
+            Merge Selected (M)
+          </button>
+        )}
         <div className="my-1 border-t border-daw-border" />
         <button
           onClick={onDelete}
