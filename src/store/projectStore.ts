@@ -64,6 +64,22 @@ function getTrackGenerationPriority(track: Track): number {
   return TRACK_CATALOG[track.trackName]?.defaultOrder ?? track.order;
 }
 
+function findNextDuplicateStart(sourceClip: Clip, trackClips: Clip[]): number {
+  let candidateStart = sourceClip.startTime + sourceClip.duration;
+  const duration = sourceClip.duration;
+
+  while (true) {
+    const candidateEnd = candidateStart + duration;
+    const blockingClip = trackClips.find((clip) =>
+      clip.id !== sourceClip.id
+      && clip.startTime < candidateEnd
+      && (clip.startTime + clip.duration) > candidateStart,
+    );
+    if (!blockingClip) return candidateStart;
+    candidateStart = blockingClip.startTime + blockingClip.duration;
+  }
+}
+
 export const useProjectStore = create<ProjectState>()(
   persist(
     (set, get) => ({
@@ -344,12 +360,15 @@ export const useProjectStore = create<ProjectState>()(
           if (c) { sourceClip = c; trackId = t.id; break; }
         }
         if (!sourceClip || !trackId) return undefined;
+        const track = state.project.tracks.find((t) => t.id === trackId);
+        if (!track) return undefined;
 
         const isReady = sourceClip.generationStatus === 'ready' && !!sourceClip.isolatedAudioKey;
+        const nextStartTime = findNextDuplicateStart(sourceClip, track.clips);
         const newClip: Clip = {
           ...sourceClip,
           id: uuidv4(),
-          startTime: sourceClip.startTime + sourceClip.duration,
+          startTime: nextStartTime,
           generationStatus: isReady ? 'ready' : 'empty',
           generationJobId: null,
           cumulativeMixKey: sourceClip.cumulativeMixKey,
