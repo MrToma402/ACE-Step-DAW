@@ -28,6 +28,7 @@ export function ClipBlock({ clip, track }: ClipBlockProps) {
   const setEditingClip = useUIStore((s) => s.setEditingClip);
   const clipDragPreview = useUIStore((s) => s.clipDragPreview);
   const setClipDragPreview = useUIStore((s) => s.setClipDragPreview);
+  const setClipGestureActive = useUIStore((s) => s.setClipGestureActive);
   const openExtendConfirmDialog = useUIStore((s) => s.openExtendConfirmDialog);
   const updateClip = useProjectStore((s) => s.updateClip);
   const moveClipToTrack = useProjectStore((s) => s.moveClipToTrack);
@@ -89,6 +90,7 @@ export function ClipBlock({ clip, track }: ClipBlockProps) {
     const bpm = project?.bpm ?? 120;
     const totalDuration = project?.totalDuration ?? 600;
     dragRef.current = false;
+    setClipGestureActive(true);
 
     const findDropTargetTrackId = (clientX: number, clientY: number): string | null => {
       const el = document.elementFromPoint(clientX, clientY);
@@ -159,9 +161,11 @@ export function ClipBlock({ clip, track }: ClipBlockProps) {
       }
     };
 
-    const onMouseUp = (ev: MouseEvent) => {
+    const onMouseUp = () => {
       window.removeEventListener('mousemove', onMouseMove);
       window.removeEventListener('mouseup', onMouseUp);
+      window.removeEventListener('blur', onMouseUp);
+      setClipGestureActive(false);
       if (mode === 'move' && dragRef.current) {
         if (latestHoverTrackId !== track.id) {
           moveClipToTrack(clip.id, latestHoverTrackId, { startTime: latestStart });
@@ -190,6 +194,7 @@ export function ClipBlock({ clip, track }: ClipBlockProps) {
 
     window.addEventListener('mousemove', onMouseMove);
     window.addEventListener('mouseup', onMouseUp);
+    window.addEventListener('blur', onMouseUp);
   }, [
     clip.id,
     clip.startTime,
@@ -213,6 +218,7 @@ export function ClipBlock({ clip, track }: ClipBlockProps) {
     updateClip,
     moveClipToTrack,
     setClipDragPreview,
+    setClipGestureActive,
     openExtendConfirmDialog,
     track.id,
     track.color,

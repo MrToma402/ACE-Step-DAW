@@ -2,13 +2,14 @@ import { useCallback, useEffect, useRef } from 'react';
 import { useTransportStore } from '../store/transportStore';
 import { useProjectStore } from '../store/projectStore';
 import { useArrangementStore } from '../store/arrangementStore';
+import { useUIStore } from '../store/uiStore';
 import { getAudioEngine } from './useAudioEngine';
 import { loadAudioBlobByKey } from '../services/audioFileManager';
 import { isArrangementClipSelected } from '../features/arrangement/selection';
 import type { Project } from '../types/project';
+import type { ArrangementWorkspace } from '../types/arrangement';
 
-function getReadyClipTokens(project: Project): string[] {
-  const workspace = useArrangementStore.getState().workspacesByProjectId[project.id] ?? null;
+function getReadyClipTokens(project: Project, workspace: ArrangementWorkspace | null): string[] {
   const tokens: string[] = [];
 
   for (const track of project.tracks) {
@@ -30,12 +31,41 @@ function getReadyClipTokens(project: Project): string[] {
   return tokens;
 }
 
+function removeStaleTrackNodes(project: Project | null): void {
+  const engine = getAudioEngine();
+  if (!project) {
+    for (const trackId of Array.from(engine.trackNodes.keys())) {
+      engine.removeTrackNode(trackId);
+    }
+    engine.updateSoloState();
+    return;
+  }
+
+  const validTrackIds = new Set(project.tracks.map((track) => track.id));
+  let removedAny = false;
+  for (const trackId of Array.from(engine.trackNodes.keys())) {
+    if (!validTrackIds.has(trackId)) {
+      engine.removeTrackNode(trackId);
+      removedAny = true;
+    }
+  }
+  if (removedAny) {
+    engine.updateSoloState();
+  }
+}
+
 export function useTransport() {
   const isPlaying = useTransportStore((s) => s.isPlaying);
   const project = useProjectStore((s) => s.project);
+  const isClipGestureActive = useUIStore((s) => s.isClipGestureActive);
+  const workspace = useArrangementStore((s) =>
+    project ? (s.workspacesByProjectId[project.id] ?? null) : null,
+  );
   const lastReadyClipsRef = useRef<Set<string> | null>(null);
   const rescheduleTimerRef = useRef<number | null>(null);
   const rescheduleInFlightRef = useRef(false);
+  const rescheduleQueuedRef = useRef(false);
+  const decodedBufferCacheRef = useRef<Map<string, AudioBuffer>>(new Map());
 
   const play = useCallback(async (fromTime?: number) => {
     const engine = getAudioEngine();
@@ -44,6 +74,7 @@ export function useTransport() {
     const proj = useProjectStore.getState().project;
     if (!proj) return;
     const workspace = useArrangementStore.getState().workspacesByProjectId[proj.id] ?? null;
+    removeStaleTrackNodes(proj);
 
     // Collect all clips with ready isolated audio
     const clipBuffers: Array<{
@@ -59,18 +90,21 @@ export function useTransport() {
       for (const clip of track.clips) {
         if (!isArrangementClipSelected(clip, workspace)) continue;
         if (clip.generationStatus === 'ready' && clip.isolatedAudioKey) {
-          const blob = await loadAudioBlobByKey(clip.isolatedAudioKey);
-          if (blob) {
-            const buffer = await engine.decodeAudioData(blob);
-            clipBuffers.push({
-              clipId: clip.id,
-              trackId: track.id,
-              startTime: clip.startTime,
-              buffer,
-              audioOffset: clip.audioOffset ?? 0,
-              clipDuration: clip.duration,
-            });
+          let buffer = decodedBufferCacheRef.current.get(clip.isolatedAudioKey);
+          if (!buffer) {
+            const blob = await loadAudioBlobByKey(clip.isolatedAudioKey);
+            if (!blob) continue;
+            buffer = await engine.decodeAudioData(blob);
+            decodedBufferCacheRef.current.set(clip.isolatedAudioKey, buffer);
           }
+          clipBuffers.push({
+            clipId: clip.id,
+            trackId: track.id,
+            startTime: clip.startTime,
+            buffer,
+            audioOffset: clip.audioOffset ?? 0,
+            clipDuration: clip.duration,
+          });
         }
       }
 
@@ -104,6 +138,32 @@ export function useTransport() {
     engine.schedulePlayback(clipBuffers, effectiveStart, effectiveEnd);
     useTransportStore.getState().play();
   }, []);
+
+  // Keep AudioEngine nodes in sync with project tracks so removed tracks cannot leave stale solo/mute state.
+  useEffect(() => {
+    removeStaleTrackNodes(project);
+  }, [project]);
+
+  // Keep cache bounded to stems still referenced by the current project.
+  useEffect(() => {
+    if (!project) {
+      decodedBufferCacheRef.current.clear();
+      return;
+    }
+    const validKeys = new Set<string>();
+    for (const track of project.tracks) {
+      for (const clip of track.clips) {
+        if (clip.generationStatus === 'ready' && clip.isolatedAudioKey) {
+          validKeys.add(clip.isolatedAudioKey);
+        }
+      }
+    }
+    for (const key of Array.from(decodedBufferCacheRef.current.keys())) {
+      if (!validKeys.has(key)) {
+        decodedBufferCacheRef.current.delete(key);
+      }
+    }
+  }, [project]);
 
   const pause = useCallback(() => {
     const engine = getAudioEngine();
@@ -170,6 +230,7 @@ export function useTransport() {
     if (!project || !isPlaying) {
       lastReadyClipsRef.current = null;
       rescheduleInFlightRef.current = false;
+      rescheduleQueuedRef.current = false;
       if (rescheduleTimerRef.current !== null) {
         window.clearTimeout(rescheduleTimerRef.current);
         rescheduleTimerRef.current = null;
@@ -177,7 +238,7 @@ export function useTransport() {
       return;
     }
 
-    const nextReadyClips = new Set(getReadyClipTokens(project));
+    const nextReadyClips = new Set(getReadyClipTokens(project, workspace));
     const prevReadyClips = lastReadyClipsRef.current;
 
     if (prevReadyClips === null) {
@@ -185,19 +246,40 @@ export function useTransport() {
       return;
     }
 
-    let hasNewReadyClip = false;
+    let hasReadyClipChange = false;
     for (const token of nextReadyClips) {
       if (!prevReadyClips.has(token)) {
-        hasNewReadyClip = true;
+        hasReadyClipChange = true;
         break;
       }
     }
+    if (!hasReadyClipChange) {
+      for (const token of prevReadyClips) {
+        if (!nextReadyClips.has(token)) {
+          hasReadyClipChange = true;
+          break;
+        }
+      }
+    }
+
     lastReadyClipsRef.current = nextReadyClips;
-    if (!hasNewReadyClip || rescheduleInFlightRef.current) return;
+    const shouldReschedule = hasReadyClipChange || rescheduleQueuedRef.current;
+    if (!shouldReschedule) return;
+    if (isClipGestureActive) {
+      // During move/resize gestures we keep playback stable and apply one update on mouse-up.
+      rescheduleQueuedRef.current = true;
+      return;
+    }
+    if (rescheduleInFlightRef.current) {
+      // A reschedule is already decoding/loading; queue one more pass so edits during playback are not lost.
+      rescheduleQueuedRef.current = true;
+      return;
+    }
 
     if (rescheduleTimerRef.current !== null) {
       window.clearTimeout(rescheduleTimerRef.current);
     }
+    rescheduleQueuedRef.current = false;
     rescheduleTimerRef.current = window.setTimeout(() => {
       rescheduleTimerRef.current = null;
       if (!useTransportStore.getState().isPlaying) return;
@@ -206,8 +288,16 @@ export function useTransport() {
       // new ready clips, then play() will swap scheduling at current playhead.
       void play().finally(() => {
         rescheduleInFlightRef.current = false;
+        if (rescheduleQueuedRef.current && useTransportStore.getState().isPlaying) {
+          if (useUIStore.getState().isClipGestureActive) return;
+          rescheduleQueuedRef.current = false;
+          rescheduleInFlightRef.current = true;
+          void play().finally(() => {
+            rescheduleInFlightRef.current = false;
+          });
+        }
       });
-    }, 120);
+    }, 180);
 
     return () => {
       if (rescheduleTimerRef.current !== null) {
@@ -215,7 +305,7 @@ export function useTransport() {
         rescheduleTimerRef.current = null;
       }
     };
-  }, [project, isPlaying, play]);
+  }, [project, workspace, isPlaying, isClipGestureActive, play]);
 
   return { isPlaying, play, pause, stop, seek };
 }

@@ -43,6 +43,7 @@ interface UIState {
   showMixer: boolean;
   shortcutBindings: ShortcutBindings;
   clipDragPreview: ClipDragPreview | null;
+  isClipGestureActive: boolean;
 
   setActiveTab: (tab: ActiveTab) => void;
   setPixelsPerSecond: (pps: number) => void;
@@ -65,6 +66,7 @@ interface UIState {
   setShortcutBinding: (action: keyof ShortcutBindings, keyCode: string) => void;
   resetShortcutBindings: () => void;
   setClipDragPreview: (preview: ClipDragPreview | null) => void;
+  setClipGestureActive: (active: boolean) => void;
   toggleMixer: () => void;
 }
 
@@ -92,6 +94,7 @@ export const useUIStore = create<UIState>((set) => ({
   showMixer: true,
   shortcutBindings: DEFAULT_SHORTCUT_BINDINGS,
   clipDragPreview: null,
+  isClipGestureActive: false,
 
   setActiveTab: (tab) => set({ activeTab: tab }),
   setPixelsPerSecond: (pps) => set({ pixelsPerSecond: pps }),
@@ -145,5 +148,6 @@ export const useUIStore = create<UIState>((set) => ({
     })),
   resetShortcutBindings: () => set({ shortcutBindings: DEFAULT_SHORTCUT_BINDINGS }),
   setClipDragPreview: (preview) => set({ clipDragPreview: preview }),
+  setClipGestureActive: (active) => set({ isClipGestureActive: active }),
   toggleMixer: () => set((s) => ({ showMixer: !s.showMixer })),
 }));
