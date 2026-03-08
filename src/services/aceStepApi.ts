@@ -1,4 +1,5 @@
 import type {
+  AnyTaskParams,
   LegoTaskParams,
   ApiEnvelope,
   ReleaseTaskResponse,
@@ -53,10 +54,23 @@ export async function releaseLegoTask(
   srcAudioBlob: Blob,
   params: LegoTaskParams,
 ): Promise<ReleaseTaskResponse> {
+  return releaseTask(srcAudioBlob, params);
+}
+
+export async function releaseTask(
+  srcAudioBlob: Blob | null,
+  params: AnyTaskParams | LegoTaskParams,
+): Promise<ReleaseTaskResponse> {
   const formData = new FormData();
 
-  // Add the audio file
-  formData.append('src_audio', srcAudioBlob, 'src_audio.wav');
+  if (srcAudioBlob && srcAudioBlob.size > 0) {
+    // Add the audio file
+    formData.append('src_audio', srcAudioBlob, 'src_audio.wav');
+    // Keep parity with JSON modal path for cover tasks.
+    if (params.task_type === 'cover') {
+      formData.append('reference_audio', srcAudioBlob, 'reference_audio.wav');
+    }
+  }
 
   // Add all params as form fields (skip null values — ACE-Step auto-infers them)
   for (const [key, value] of Object.entries(params)) {
@@ -71,7 +85,7 @@ export async function releaseLegoTask(
 
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`releaseLegoTask failed: ${res.status} - ${text}`);
+    throw new Error(`releaseTask failed: ${res.status} - ${text}`);
   }
 
   const envelope: ApiEnvelope<ReleaseTaskResponse> = await res.json();

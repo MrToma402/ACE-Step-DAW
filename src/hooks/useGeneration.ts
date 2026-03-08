@@ -3,6 +3,7 @@ import { useGenerationStore } from '../store/generationStore';
 import { useProjectStore } from '../store/projectStore';
 import {
   generateAllTracks,
+  generateSingleClipCover,
   generateClipWithContext,
   generateSingleClip,
   generateSingleClipRepaint,
@@ -133,6 +134,19 @@ export function useGeneration() {
     await generateSingleClipRepaint(clipId, repaintStartTime, repaintEndTime);
   }, [project, isGenerating]);
 
+  const coverClipWithReference = useCallback(async (
+    clipId: string,
+    referenceClipId: string,
+    overrides?: {
+      prompt?: string;
+      lyrics?: string;
+      coverStrength?: number;
+    },
+  ) => {
+    if (!project || isGenerating) return;
+    await generateSingleClipCover(clipId, referenceClipId, overrides);
+  }, [project, isGenerating]);
+
   return {
     jobs,
     isGenerating,
@@ -140,5 +154,6 @@ export function useGeneration() {
     generateClip,
     generateClipWithSourceContext,
     repaintClipRegion,
+    coverClipWithReference,
   };
 }

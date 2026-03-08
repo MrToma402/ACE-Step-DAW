@@ -16,6 +16,7 @@ import { ProjectListDialog } from '../dialogs/ProjectListDialog';
 import { KeyboardShortcutsDialog } from '../dialogs/KeyboardShortcutsDialog';
 import { ExtendConfirmDialog } from '../dialogs/ExtendConfirmDialog';
 import { RepaintDialog } from '../dialogs/RepaintDialog';
+import { CoverDialog } from '../dialogs/CoverDialog';
 import { useAudioEngine } from '../../hooks/useAudioEngine';
 import { useProjectStore } from '../../store/projectStore';
 import { useUIStore } from '../../store/uiStore';
@@ -44,6 +45,7 @@ export function AppShell() {
   const editingClipId = useUIStore((s) => s.editingClipId);
   const extendConfirmRequest = useUIStore((s) => s.extendConfirmRequest);
   const repaintRequest = useUIStore((s) => s.repaintRequest);
+  const coverRequest = useUIStore((s) => s.coverRequest);
   const selectedClipIds = useUIStore((s) => s.selectedClipIds);
   const deselectAll = useUIStore((s) => s.deselectAll);
   const shortcutBindings = useUIStore((s) => s.shortcutBindings);
@@ -56,6 +58,7 @@ export function AppShell() {
   const setEditingClip = useUIStore((s) => s.setEditingClip);
   const closeExtendConfirmDialog = useUIStore((s) => s.closeExtendConfirmDialog);
   const closeRepaintDialog = useUIStore((s) => s.closeRepaintDialog);
+  const closeCoverDialog = useUIStore((s) => s.closeCoverDialog);
   const setShiftPressed = useUIStore((s) => s.setShiftPressed);
   const ensureProjectWorkspace = useArrangementStore((s) => s.ensureProjectWorkspace);
   const { isPlaying, play, pause } = useTransport();
@@ -110,6 +113,10 @@ export function AppShell() {
       }
       if (repaintRequest) {
         closeRepaintDialog();
+        return true;
+      }
+      if (coverRequest) {
+        closeCoverDialog();
         return true;
       }
       if (editingClipId) {
@@ -219,9 +226,11 @@ export function AppShell() {
     editingClipId,
     extendConfirmRequest,
     repaintRequest,
+    coverRequest,
     shortcutBindings,
     closeExtendConfirmDialog,
     closeRepaintDialog,
+    closeCoverDialog,
     setEditingClip,
     setShowExportDialog,
     setShowInstrumentPicker,
@@ -327,6 +336,7 @@ export function AppShell() {
       <ProjectListDialog />
       <ExtendConfirmDialog />
       <RepaintDialog />
+      <CoverDialog />
     </div>
   );
 }

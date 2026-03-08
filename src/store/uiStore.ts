@@ -31,6 +31,11 @@ export interface RepaintRequest {
   endTime: number;
 }
 
+export interface CoverRequest {
+  clipId: string;
+  referenceClipId: string;
+}
+
 interface UIState {
   activeTab: ActiveTab;
   pixelsPerSecond: number;
@@ -47,6 +52,7 @@ interface UIState {
   showKeyboardShortcutsDialog: boolean;
   extendConfirmRequest: ExtendConfirmRequest | null;
   repaintRequest: RepaintRequest | null;
+  coverRequest: CoverRequest | null;
   isShiftPressed: boolean;
   showMixer: boolean;
   shortcutBindings: ShortcutBindings;
@@ -73,6 +79,8 @@ interface UIState {
   closeExtendConfirmDialog: () => void;
   openRepaintDialog: (request: RepaintRequest) => void;
   closeRepaintDialog: () => void;
+  openCoverDialog: (request: CoverRequest) => void;
+  closeCoverDialog: () => void;
   setShiftPressed: (pressed: boolean) => void;
   setShortcutBinding: (action: keyof ShortcutBindings, keyCode: string) => void;
   resetShortcutBindings: () => void;
@@ -103,6 +111,7 @@ export const useUIStore = create<UIState>((set) => ({
   showKeyboardShortcutsDialog: false,
   extendConfirmRequest: null,
   repaintRequest: null,
+  coverRequest: null,
   isShiftPressed: false,
   showMixer: true,
   shortcutBindings: DEFAULT_SHORTCUT_BINDINGS,
@@ -154,6 +163,8 @@ export const useUIStore = create<UIState>((set) => ({
   closeExtendConfirmDialog: () => set({ extendConfirmRequest: null }),
   openRepaintDialog: (request) => set({ repaintRequest: request }),
   closeRepaintDialog: () => set({ repaintRequest: null }),
+  openCoverDialog: (request) => set({ coverRequest: request }),
+  closeCoverDialog: () => set({ coverRequest: null }),
   setShiftPressed: (pressed) => set({ isShiftPressed: pressed }),
   setShortcutBinding: (action, keyCode) =>
     set((s) => ({

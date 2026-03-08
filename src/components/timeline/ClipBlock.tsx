@@ -32,6 +32,7 @@ export function ClipBlock({ clip, track }: ClipBlockProps) {
   const setClipGestureActive = useUIStore((s) => s.setClipGestureActive);
   const isShiftPressed = useUIStore((s) => s.isShiftPressed);
   const openRepaintDialog = useUIStore((s) => s.openRepaintDialog);
+  const openCoverDialog = useUIStore((s) => s.openCoverDialog);
   const openExtendConfirmDialog = useUIStore((s) => s.openExtendConfirmDialog);
   const updateClip = useProjectStore((s) => s.updateClip);
   const moveClipToTrack = useProjectStore((s) => s.moveClipToTrack);
@@ -634,11 +635,13 @@ export function ClipBlock({ clip, track }: ClipBlockProps) {
           y={ctxMenu.y}
           onEdit={() => { closeCtxMenu(); setEditingClip(clip.id); }}
           onGenerate={() => { closeCtxMenu(); generateClip(clip.id); }}
+          onCover={() => { closeCtxMenu(); openCoverDialog({ clipId: clip.id, referenceClipId: clip.id }); }}
           onDuplicate={() => { closeCtxMenu(); duplicateClip(clip.id); }}
           onDuplicateToNewLayer={() => { closeCtxMenu(); handleDuplicateToNewLayer(); }}
           onDelete={() => { closeCtxMenu(); removeClip(clip.id); }}
           onClose={closeCtxMenu}
           hasPrompt={!!clip.prompt}
+          hasReferenceAudio={!!clip.isolatedAudioKey}
         />
       )}
     </>
@@ -646,17 +649,19 @@ export function ClipBlock({ clip, track }: ClipBlockProps) {
 }
 
 function ClipContextMenu({
-  x, y, onEdit, onGenerate, onDuplicate, onDuplicateToNewLayer, onDelete, onClose, hasPrompt,
+  x, y, onEdit, onGenerate, onCover, onDuplicate, onDuplicateToNewLayer, onDelete, onClose, hasPrompt, hasReferenceAudio,
 }: {
   x: number;
   y: number;
   onEdit: () => void;
   onGenerate: () => void;
+  onCover: () => void;
   onDuplicate: () => void;
   onDuplicateToNewLayer: () => void;
   onDelete: () => void;
   onClose: () => void;
   hasPrompt: boolean;
+  hasReferenceAudio: boolean;
 }) {
   return (
     <>
@@ -679,6 +684,14 @@ function ClipContextMenu({
         >
           <span className="material-symbols-outlined text-xs">auto_awesome</span>
           Generate
+        </button>
+        <button
+          onClick={onCover}
+          disabled={!hasReferenceAudio}
+          className="w-full text-left px-3 py-1.5 text-xs text-slate-300 hover:bg-white/5 transition-colors disabled:text-slate-700 disabled:cursor-not-allowed flex items-center gap-2"
+        >
+          <span className="material-symbols-outlined text-xs">mic</span>
+          Cover
         </button>
         <button
           onClick={onDuplicate}

@@ -1,7 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import { useProjectStore } from '../store/projectStore';
 import { useGenerationStore } from '../store/generationStore';
-import type { LegoTaskParams, TaskResultItem } from '../types/api';
+import type { CoverTaskParams, LegoTaskParams, TaskResultItem } from '../types/api';
 import type { InferredMetas } from '../types/project';
 import * as api from './aceStepApi';
 import { generateViaModal } from './modalApi';
@@ -19,6 +19,7 @@ import { buildTrackGenerationTextInputs } from '../features/generation/trackLyri
 const EDGE_FADE_SECONDS = 0.005;
 const MIN_REPAINT_DURATION_SECONDS = 0.1;
 const TARGET_ISOLATED_PEAK = 0.98;
+const DEFAULT_COVER_STRENGTH = 0.7;
 const WAVE_SUBTRACTION_ALPHA = 1.0;
 const WAVE_SUBTRACTION_GAIN_MATCH = true;
 const WAVE_SUBTRACTION_MIN_GAIN = 0.5;
@@ -85,6 +86,12 @@ interface RepaintRangeOverrides {
   endTime: number;
 }
 
+interface CoverGenerationOverrides {
+  prompt?: string;
+  lyrics?: string;
+  coverStrength?: number;
+}
+
 function resolveRepaintingBounds(
   clip: { startTime: number; duration: number },
   repaintRange?: RepaintRangeOverrides,
@@ -135,6 +142,25 @@ function extractClipBufferFromTimeline(
     }
   }
   return trimmedBuffer;
+}
+
+function fitBufferToDuration(
+  ctx: AudioContext,
+  sourceBuffer: AudioBuffer,
+  targetDuration: number,
+): AudioBuffer {
+  const sampleRate = sourceBuffer.sampleRate;
+  const targetLength = Math.max(1, Math.floor(targetDuration * sampleRate));
+  const out = ctx.createBuffer(sourceBuffer.numberOfChannels, targetLength, sampleRate);
+  for (let ch = 0; ch < sourceBuffer.numberOfChannels; ch++) {
+    const src = sourceBuffer.getChannelData(ch);
+    const dst = out.getChannelData(ch);
+    const copyLength = Math.min(src.length, dst.length);
+    if (copyLength > 0) {
+      dst.set(src.subarray(0, copyLength), 0);
+    }
+  }
+  return out;
 }
 
 function buildPatchedClipBuffer(
@@ -226,6 +252,18 @@ function applyEdgeFade(buffer: AudioBuffer, fadeSeconds: number): void {
       data[data.length - 1 - i] *= gain;
     }
   }
+}
+
+function buildInferredMetas(firstResult: TaskResultItem | null): InferredMetas | undefined {
+  if (!firstResult) return undefined;
+  return {
+    bpm: firstResult.metas?.bpm,
+    keyScale: firstResult.metas?.keyscale,
+    timeSignature: firstResult.metas?.timesignature,
+    genres: firstResult.metas?.genres,
+    seed: firstResult.seed_value,
+    ditModel: firstResult.dit_model,
+  };
 }
 
 /**
@@ -338,6 +376,27 @@ export async function generateSingleClipRepaint(
   }
 }
 
+export async function generateSingleClipCover(
+  clipId: string,
+  referenceClipId: string,
+  overrides?: CoverGenerationOverrides,
+): Promise<void> {
+  const genStore = useGenerationStore.getState();
+  if (genStore.isGenerating) return;
+  genStore.setIsGenerating(true);
+
+  try {
+    await generateClipCoverInternal(clipId, referenceClipId, overrides);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Cover generation failed';
+    if (typeof window !== 'undefined') {
+      window.alert(message);
+    }
+  } finally {
+    useGenerationStore.getState().setIsGenerating(false);
+  }
+}
+
 export async function generateClipWithContext(
   clipId: string,
   previousCumulativeBlob: Blob | null,
@@ -349,6 +408,204 @@ export async function generateClipWithContext(
     throw new Error(clip?.errorMessage || 'Generation failed');
   }
   return nextBlob;
+}
+
+async function generateClipCoverInternal(
+  clipId: string,
+  referenceClipId: string,
+  overrides?: CoverGenerationOverrides,
+): Promise<void> {
+  const store = useProjectStore.getState();
+  const genStore = useGenerationStore.getState();
+  const project = store.project;
+  if (!project) return;
+
+  const clip = store.getClipById(clipId);
+  const track = store.getTrackForClip(clipId);
+  const referenceClip = store.getClipById(referenceClipId);
+  if (!clip || !track || !referenceClip) return;
+
+  const referenceAudioKey = referenceClip.isolatedAudioKey;
+  if (!referenceAudioKey) {
+    throw new Error('Cover needs reference audio on the selected clip. Import or generate it first.');
+  }
+  const referenceAudioBlob = await loadAudioBlobByKey(referenceAudioKey);
+  if (!referenceAudioBlob) {
+    throw new Error('Cover reference audio could not be loaded.');
+  }
+
+  const jobId = uuidv4();
+  const now = Date.now();
+  genStore.addJob({
+    id: jobId,
+    clipId,
+    trackName: track.trackName,
+    status: 'queued',
+    progress: 'Queued',
+    startedAt: now,
+    updatedAt: now,
+  });
+  store.updateClipStatus(clipId, 'queued', { generationJobId: jobId });
+
+  try {
+    const resolvedBpm = clip.bpm === 'auto' ? null : (clip.bpm ?? project.bpm);
+    const resolvedKey = clip.keyScale === 'auto' ? '' : (clip.keyScale ?? project.keyScale);
+    const resolvedTimeSig = clip.timeSignature === 'auto' ? '' : String(clip.timeSignature ?? project.timeSignature);
+    const effectivePrompt = overrides?.prompt ?? clip.prompt;
+    const effectiveLyrics = overrides?.lyrics ?? clip.lyrics;
+    const effectiveCoverStrength = Math.max(
+      0,
+      Math.min(1, overrides?.coverStrength ?? DEFAULT_COVER_STRENGTH),
+    );
+    const legoPrompt = buildLegoPromptContent({
+      clip: {
+        ...clip,
+        prompt: effectivePrompt,
+        lyrics: effectiveLyrics,
+      },
+      track,
+    });
+    const generationTextInputs = buildTrackGenerationTextInputs(
+      track.trackName,
+      effectiveLyrics,
+      legoPrompt.instruction,
+    );
+
+    const params: CoverTaskParams = {
+      task_type: 'cover',
+      prompt: legoPrompt.prompt,
+      lyrics: generationTextInputs.lyrics,
+      audio_duration: clip.duration,
+      bpm: resolvedBpm,
+      key_scale: resolvedKey,
+      time_signature: resolvedTimeSig,
+      inference_steps: project.generationDefaults.inferenceSteps,
+      guidance_scale: project.generationDefaults.guidanceScale,
+      shift: project.generationDefaults.shift,
+      batch_size: 1,
+      audio_format: 'wav',
+      thinking: project.generationDefaults.thinking,
+      model: project.generationDefaults.model || undefined,
+      audio_cover_strength: effectiveCoverStrength,
+    } as CoverTaskParams;
+
+    const lockedSeed = clip.lockedSeed?.trim();
+    if (lockedSeed) {
+      params.seed = lockedSeed;
+    }
+    if (clip.autoExpandPrompt === false) {
+      params.use_cot_caption = false;
+    }
+
+    const coverSourceBlob = referenceAudioBlob;
+
+    useGenerationStore.getState().updateJob(jobId, { status: 'generating', progress: 'Submitting...' });
+    useProjectStore.getState().updateClipStatus(clipId, 'generating');
+
+    let generatedBlob: Blob;
+    let firstResult: TaskResultItem | null = null;
+
+    if (project.generationDefaults.useModal ?? true) {
+      useGenerationStore.getState().updateJob(jobId, { progress: 'Generating cover...' });
+      const modalResult = await generateViaModal(coverSourceBlob, params, ({ progressText }) => {
+        useGenerationStore.getState().updateJob(jobId, {
+          status: 'generating',
+          progress: progressText || 'Generating...',
+        });
+      });
+      generatedBlob = modalResult.audioBlob;
+      if (modalResult.metas && Object.keys(modalResult.metas).length > 0) {
+        firstResult = {
+          file: '',
+          wave: '',
+          status: 1,
+          create_time: Date.now(),
+          env: 'modal',
+          prompt: effectivePrompt,
+          lyrics: effectiveLyrics,
+          metas: modalResult.metas,
+          seed_value: modalResult.seed_value,
+          dit_model: modalResult.dit_model,
+        };
+      }
+    } else {
+      const releaseResp = await api.releaseTask(coverSourceBlob, params);
+      const taskId = releaseResp.task_id;
+
+      const startTime = Date.now();
+      let resultAudioPath: string | null = null;
+      let lastPollError: string | null = null;
+
+      while (Date.now() - startTime < MAX_POLL_DURATION_MS) {
+        await sleep(POLL_INTERVAL_MS);
+
+        let entries;
+        try {
+          entries = await api.queryResult([taskId]);
+          lastPollError = null;
+        } catch (error) {
+          lastPollError = error instanceof Error ? error.message : 'query_result failed';
+          continue;
+        }
+        const entry = entries?.[0];
+        if (!entry) continue;
+
+        useGenerationStore.getState().updateJob(jobId, {
+          progress: entry.progress_text || 'Generating...',
+        });
+
+        if (entry.status === 1) {
+          const resultItems: TaskResultItem[] = JSON.parse(entry.result);
+          firstResult = resultItems?.[0] ?? null;
+          resultAudioPath = firstResult?.file ?? null;
+          break;
+        } else if (entry.status === 2) {
+          throw new Error(`Generation failed: ${entry.result}`);
+        }
+      }
+
+      if (!resultAudioPath) {
+        throw new Error(lastPollError ? `Generation timed out (${lastPollError})` : 'Generation timed out');
+      }
+
+      useGenerationStore.getState().updateJob(jobId, { status: 'processing', progress: 'Downloading audio...' });
+      useProjectStore.getState().updateClipStatus(clipId, 'processing');
+      generatedBlob = await api.downloadAudio(resultAudioPath);
+    }
+
+    useGenerationStore.getState().updateJob(jobId, { status: 'processing', progress: 'Finalizing clip...' });
+    useProjectStore.getState().updateClipStatus(clipId, 'processing');
+
+    const engine = getAudioEngine();
+    const generatedBuffer = await engine.decodeAudioData(generatedBlob);
+    const currentClip = useProjectStore.getState().getClipById(clipId);
+    const clipDuration = currentClip?.duration ?? clip.duration;
+    const finalClipBuffer = fitBufferToDuration(engine.ctx, generatedBuffer, clipDuration);
+
+    limitBufferPeak(finalClipBuffer, TARGET_ISOLATED_PEAK);
+    applyEdgeFade(finalClipBuffer, EDGE_FADE_SECONDS);
+
+    const isolatedBlob = audioBufferToWavBlob(finalClipBuffer);
+    const isolatedKey = await saveAudioBlob(project.id, clipId, 'isolated', isolatedBlob);
+    const peaks = computeWaveformPeaks(finalClipBuffer, 200);
+    const inferredMetas = buildInferredMetas(firstResult);
+
+    useProjectStore.getState().updateClipStatus(clipId, 'ready', {
+      cumulativeMixKey: null,
+      isolatedAudioKey: isolatedKey,
+      waveformPeaks: peaks,
+      inferredMetas,
+      audioDuration: clipDuration,
+      audioOffset: 0,
+      errorMessage: undefined,
+    });
+
+    useGenerationStore.getState().updateJob(jobId, { status: 'done', progress: 'Done' });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    useProjectStore.getState().updateClipStatus(clipId, 'error', { errorMessage: message });
+    useGenerationStore.getState().updateJob(jobId, { status: 'error', progress: message, error: message });
+  }
 }
 
 async function generateClipInternal(
@@ -620,16 +877,7 @@ async function generateClipInternal(
     const peaks = computeWaveformPeaks(finalClipBuffer, 200);
 
     // Build inferred metadata from result
-    const inferredMetas: InferredMetas | undefined = firstResult
-      ? {
-        bpm: firstResult.metas?.bpm,
-        keyScale: firstResult.metas?.keyscale,
-        timeSignature: firstResult.metas?.timesignature,
-        genres: firstResult.metas?.genres,
-        seed: firstResult.seed_value,
-        ditModel: firstResult.dit_model,
-      }
-      : undefined;
+    const inferredMetas = buildInferredMetas(firstResult);
 
     // Update clip as ready
     useProjectStore.getState().updateClipStatus(clipId, 'ready', {
