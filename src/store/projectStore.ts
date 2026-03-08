@@ -32,7 +32,7 @@ interface ProjectState {
   addTrack: (trackName: TrackName) => Track;
   removeTrack: (trackId: string) => void;
   reorderTrack: (draggedTrackId: string, targetTrackId: string) => void;
-  updateTrack: (trackId: string, updates: Partial<Pick<Track, 'displayName' | 'volume' | 'muted' | 'soloed'>>) => void;
+  updateTrack: (trackId: string, updates: Partial<Pick<Track, 'displayName' | 'volume' | 'muted' | 'soloed' | 'hidden'>>) => void;
 
   addClip: (trackId: string, clip: Omit<Clip, 'id' | 'trackId' | 'generationStatus' | 'generationJobId' | 'cumulativeMixKey' | 'isolatedAudioKey' | 'waveformPeaks'>) => Clip;
   updateClip: (clipId: string, updates: Partial<Clip>) => void;
@@ -126,6 +126,7 @@ export const useProjectStore = create<ProjectState>()(
           volume: 0.8,
           muted: false,
           soloed: false,
+          hidden: false,
           clips: [],
         };
 
@@ -415,11 +416,13 @@ export const useProjectStore = create<ProjectState>()(
       getTracksInGenerationOrder: () => {
         const project = get().project;
         if (!project) return [];
-        return [...project.tracks].sort((a, b) => {
-          const priorityDelta = getTrackGenerationPriority(b) - getTrackGenerationPriority(a);
-          if (priorityDelta !== 0) return priorityDelta;
-          return b.order - a.order;
-        });
+        return project.tracks
+          .filter((track) => !track.hidden)
+          .sort((a, b) => {
+            const priorityDelta = getTrackGenerationPriority(b) - getTrackGenerationPriority(a);
+            if (priorityDelta !== 0) return priorityDelta;
+            return b.order - a.order;
+          });
       },
 
       getTotalDuration: () => {
@@ -443,6 +446,10 @@ export const useProjectStore = create<ProjectState>()(
           } else {
             state.project.generationDefaults = { ...DEFAULT_GENERATION };
           }
+          state.project.tracks = (state.project.tracks ?? []).map((track) => ({
+            ...track,
+            hidden: track.hidden ?? false,
+          }));
         }
         return { ...current, ...state };
       },

@@ -13,6 +13,7 @@ function getReadyClipTokens(project: Project, workspace: ArrangementWorkspace | 
   const tokens: string[] = [];
 
   for (const track of project.tracks) {
+    if (track.hidden) continue;
     for (const clip of track.clips) {
       if (!isArrangementClipSelected(clip, workspace)) continue;
       if (clip.generationStatus !== 'ready' || !clip.isolatedAudioKey) continue;
@@ -87,32 +88,34 @@ export function useTransport() {
     }> = [];
 
     for (const track of proj.tracks) {
-      for (const clip of track.clips) {
-        if (!isArrangementClipSelected(clip, workspace)) continue;
-        if (clip.generationStatus === 'ready' && clip.isolatedAudioKey) {
-          let buffer = decodedBufferCacheRef.current.get(clip.isolatedAudioKey);
-          if (!buffer) {
-            const blob = await loadAudioBlobByKey(clip.isolatedAudioKey);
-            if (!blob) continue;
-            buffer = await engine.decodeAudioData(blob);
-            decodedBufferCacheRef.current.set(clip.isolatedAudioKey, buffer);
+      if (!track.hidden) {
+        for (const clip of track.clips) {
+          if (!isArrangementClipSelected(clip, workspace)) continue;
+          if (clip.generationStatus === 'ready' && clip.isolatedAudioKey) {
+            let buffer = decodedBufferCacheRef.current.get(clip.isolatedAudioKey);
+            if (!buffer) {
+              const blob = await loadAudioBlobByKey(clip.isolatedAudioKey);
+              if (!blob) continue;
+              buffer = await engine.decodeAudioData(blob);
+              decodedBufferCacheRef.current.set(clip.isolatedAudioKey, buffer);
+            }
+            clipBuffers.push({
+              clipId: clip.id,
+              trackId: track.id,
+              startTime: clip.startTime,
+              buffer,
+              audioOffset: clip.audioOffset ?? 0,
+              clipDuration: clip.duration,
+            });
           }
-          clipBuffers.push({
-            clipId: clip.id,
-            trackId: track.id,
-            startTime: clip.startTime,
-            buffer,
-            audioOffset: clip.audioOffset ?? 0,
-            clipDuration: clip.duration,
-          });
         }
       }
 
       // Update track node state
       const trackNode = engine.getOrCreateTrackNode(track.id);
       trackNode.volume = track.volume;
-      trackNode.muted = track.muted;
-      trackNode.soloed = track.soloed;
+      trackNode.muted = track.muted || track.hidden;
+      trackNode.soloed = !track.hidden && track.soloed;
     }
     engine.updateSoloState();
 
@@ -218,8 +221,8 @@ export function useTransport() {
       const trackNode = engine.trackNodes.get(track.id);
       if (trackNode) {
         trackNode.volume = track.volume;
-        trackNode.muted = track.muted;
-        trackNode.soloed = track.soloed;
+        trackNode.muted = track.muted || track.hidden;
+        trackNode.soloed = !track.hidden && track.soloed;
       }
     }
     engine.updateSoloState();

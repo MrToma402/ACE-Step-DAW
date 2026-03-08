@@ -13,6 +13,7 @@ function makeTrack(overrides?: Partial<Track>): Track {
     volume: 0.8,
     muted: false,
     soloed: false,
+    hidden: false,
     clips: [],
     ...overrides,
   };

@@ -65,6 +65,19 @@ export function TrackLane({ track }: TrackLaneProps) {
       : track.clips;
 
   if (!project) return null;
+  if (track.hidden) {
+    return (
+      <div
+        className="relative h-24 border-b border-daw-border bg-daw-surface/20"
+        data-track-id={track.id}
+        style={{ width: totalWidth }}
+      >
+        <div className="absolute inset-0 flex items-center justify-center text-[10px] uppercase tracking-[0.16em] text-slate-600">
+          Hidden Track
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div

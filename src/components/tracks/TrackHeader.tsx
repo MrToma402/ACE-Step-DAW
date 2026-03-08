@@ -157,7 +157,7 @@ export function TrackHeader({
           : isDropTarget
             ? 'bg-daw-accent/10 ring-1 ring-inset ring-daw-accent/50'
             : 'bg-daw-panel hover:bg-daw-panel-light'
-      }`}
+      } ${track.hidden ? 'opacity-60' : ''}`}
     >
       <input
         ref={fileInputRef}
@@ -180,6 +180,19 @@ export function TrackHeader({
 
         {/* Mute / Solo / Remove buttons */}
         <div className="flex gap-1" data-no-track-drag="true">
+          <button
+            onClick={() => updateTrack(track.id, { hidden: !track.hidden })}
+            className={`w-5 h-4 text-[8px] font-bold flex items-center justify-center rounded transition-colors ${
+              track.hidden
+                ? 'bg-slate-700/80 text-slate-200'
+                : 'bg-black/40 text-slate-600 hover:text-white'
+            }`}
+            title={track.hidden ? 'Show track' : 'Hide track'}
+          >
+            <span className="material-symbols-outlined" style={{ fontSize: '10px' }}>
+              {track.hidden ? 'visibility_off' : 'visibility'}
+            </span>
+          </button>
           <button
             onClick={() => updateTrack(track.id, { muted: !track.muted })}
             className={`w-5 h-4 text-[8px] font-bold flex items-center justify-center rounded transition-colors ${track.muted

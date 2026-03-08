@@ -53,6 +53,7 @@ export interface Track {
   volume: number;
   muted: boolean;
   soloed: boolean;
+  hidden: boolean;
   clips: Clip[];
 }
 

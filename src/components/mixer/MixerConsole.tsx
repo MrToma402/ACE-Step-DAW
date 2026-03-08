@@ -66,7 +66,9 @@ export function MixerConsole() {
 
     if (!project) return null;
 
-    const sortedTracks = [...project.tracks].sort((a, b) => a.order - b.order);
+    const sortedTracks = [...project.tracks]
+      .filter((track) => !track.hidden)
+      .sort((a, b) => a.order - b.order);
     const masterPct = levelToPercent(masterLevel);
     const masterDb = volumeToDb(masterLevel > 0.001 ? masterLevel : 0);
 

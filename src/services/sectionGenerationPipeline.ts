@@ -50,6 +50,8 @@ async function getPreviousSectionReferenceContext(
   let furthestClip: Clip | null = null;
   for (const clipId of take.trackClipIds) {
     const clip = projectStore.getClipById(clipId);
+    const track = projectStore.getTrackForClip(clipId);
+    if (track?.hidden) continue;
     if (!clip?.cumulativeMixKey) continue;
     if (!furthestClip) {
       furthestClip = clip;

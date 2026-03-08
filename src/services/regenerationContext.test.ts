@@ -32,7 +32,7 @@ function makeClip(
 function makeTrack(
   id: string,
   clips: Clip[],
-  options?: { muted?: boolean; soloed?: boolean; volume?: number },
+  options?: { muted?: boolean; soloed?: boolean; volume?: number; hidden?: boolean },
 ): Track {
   return {
     id,
@@ -43,6 +43,7 @@ function makeTrack(
     volume: options?.volume ?? 0.8,
     muted: options?.muted ?? false,
     soloed: options?.soloed ?? false,
+    hidden: options?.hidden ?? false,
     clips: clips.map((clip) => ({ ...clip, trackId: id })),
   };
 }
@@ -95,6 +96,16 @@ test('collectRegenerationContextSources ignores muted and solo state', () => {
   const sources = collectRegenerationContextSources(project, 'not-present');
 
   assert.deepEqual(sources.map((source) => source.clipId), ['m1', 's1', 'n1']);
+});
+
+test('collectRegenerationContextSources excludes hidden tracks', () => {
+  const hiddenTrack = makeTrack('hidden', [makeClip('h1', 0, 8)], { hidden: true });
+  const visibleTrack = makeTrack('visible', [makeClip('v1', 1, 4)]);
+  const project = makeProject([hiddenTrack, visibleTrack]);
+
+  const sources = collectRegenerationContextSources(project, 'not-present');
+
+  assert.deepEqual(sources.map((source) => source.clipId), ['v1']);
 });
 
 test('getRegenerationContextEnd returns furthest clip end', () => {

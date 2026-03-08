@@ -75,6 +75,7 @@ export function collectRegenerationContextSources(
   const sources: RegenerationContextSource[] = [];
 
   for (const track of project.tracks) {
+    if (track.hidden) continue;
     for (const clip of track.clips) {
       if (clip.id === excludedClipId) continue;
       if (clip.generationStatus !== 'ready' || !clip.isolatedAudioKey) continue;

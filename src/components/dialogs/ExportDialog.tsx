@@ -25,9 +25,10 @@ export function ExportDialog() {
   ): Promise<Array<{ startTime: number; buffer: AudioBuffer; volume: number }>> => {
     const engine = getAudioEngine();
     const clips: Array<{ startTime: number; buffer: AudioBuffer; volume: number }> = [];
-    const anySoloed = project.tracks.some((t) => t.soloed);
+    const anySoloed = project.tracks.some((t) => !t.hidden && t.soloed);
     for (const track of project.tracks) {
       if (trackFilter && !trackFilter(track.id)) continue;
+      if (track.hidden) continue;
       if (track.muted) continue;
       if (!trackFilter && anySoloed && !track.soloed) continue;
       for (const clip of track.clips) {
@@ -63,6 +64,7 @@ export function ExportDialog() {
         downloadBlob(wavBlob, `${project.name}.wav`);
       } else {
         for (const track of project.tracks) {
+          if (track.hidden) continue;
           const clips = await collectTrackClips((trackId) => trackId === track.id);
           if (clips.length === 0) continue;
           const stemBlob = await exportMixToWav(clips, project.totalDuration, 48000, {
@@ -80,7 +82,8 @@ export function ExportDialog() {
     }
   };
 
-  const readyClips = project.tracks.flatMap((t) =>
+  const visibleTracks = project.tracks.filter((track) => !track.hidden);
+  const readyClips = visibleTracks.flatMap((t) =>
     t.clips.filter((c) => c.generationStatus === 'ready' && isArrangementClipSelected(c, workspace)),
   );
 
@@ -103,7 +106,7 @@ export function ExportDialog() {
           </p>
           <p className="text-xs text-zinc-500">
             {readyClips.length} clip{readyClips.length !== 1 ? 's' : ''} ready across{' '}
-            {project.tracks.length} track{project.tracks.length !== 1 ? 's' : ''}
+            {visibleTracks.length} track{visibleTracks.length !== 1 ? 's' : ''}
           </p>
           <div className="flex gap-2">
             <button
