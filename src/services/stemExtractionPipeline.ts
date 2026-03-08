@@ -54,13 +54,18 @@ function buildExtractParams(project: Project, trackName: TrackName, duration: nu
   };
 }
 
-async function buildTrackSourceMix(project: Project, track: Track): Promise<SourceMix> {
+async function buildTrackSourceMix(
+  project: Project,
+  track: Track,
+  sourceClipId?: string,
+): Promise<SourceMix> {
   const workspace = useArrangementStore.getState().workspacesByProjectId[project.id] ?? null;
   const readyClips = track.clips.filter(
     (clip) =>
-      clip.generationStatus === 'ready'
-      && Boolean(clip.isolatedAudioKey)
-      && isArrangementClipSelected(clip, workspace),
+      (!sourceClipId || clip.id === sourceClipId)
+      && isArrangementClipSelected(clip, workspace)
+      && clip.generationStatus === 'ready'
+      && Boolean(clip.isolatedAudioKey),
   );
   if (readyClips.length === 0) {
     throw new Error('Track has no ready audio clips to extract.');
@@ -101,7 +106,7 @@ async function buildTrackSourceMix(project: Project, track: Track): Promise<Sour
     const source = offlineCtx.createBufferSource();
     source.buffer = buffer;
     const gain = offlineCtx.createGain();
-    gain.gain.value = track.volume;
+    gain.gain.value = 1;
     source.connect(gain);
     gain.connect(masterGain);
     source.start(clip.startTime, clipOffset, playbackDuration);
@@ -115,7 +120,10 @@ async function buildTrackSourceMix(project: Project, track: Track): Promise<Sour
   };
 }
 
-export async function extractTrackToNewTracks(sourceTrackId: string): Promise<ExtractTrackStemsResult> {
+export async function extractTrackToNewTracks(
+  sourceTrackId: string,
+  sourceClipId?: string,
+): Promise<ExtractTrackStemsResult> {
   const projectStore = useProjectStore.getState();
   const project = projectStore.project;
   if (!project) {
@@ -132,7 +140,7 @@ export async function extractTrackToNewTracks(sourceTrackId: string): Promise<Ex
 
   useGenerationStore.getState().setIsGenerating(true);
   try {
-    const sourceMix = await buildTrackSourceMix(project, sourceTrack);
+    const sourceMix = await buildTrackSourceMix(project, sourceTrack, sourceClipId);
     const result: ExtractTrackStemsResult = {
       createdTrackNames: [],
       skippedTrackNames: [],

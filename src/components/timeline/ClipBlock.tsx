@@ -363,7 +363,7 @@ export function ClipBlock({ clip, track }: ClipBlockProps) {
     setIsExtracting(true);
     void (async () => {
       try {
-        const result = await extractTrackToNewTracks(track.id);
+        const result = await extractTrackToNewTracks(track.id, clip.id);
         const createdCount = result.createdTrackNames.length;
         const skippedCount = result.skippedTrackNames.length;
         const failedCount = result.failedTrackNames.length;
@@ -383,7 +383,7 @@ export function ClipBlock({ clip, track }: ClipBlockProps) {
         setIsExtracting(false);
       }
     })();
-  }, [closeCtxMenu, isExtracting, isGenerating, track.id]);
+  }, [clip.id, closeCtxMenu, isExtracting, isGenerating, track.id]);
 
   const handleMouseMoveLocal = useCallback((e: React.MouseEvent) => {
     if (isShiftPressed || e.shiftKey) {
