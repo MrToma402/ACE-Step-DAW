@@ -503,6 +503,30 @@ export async function generateAllTracks(): Promise<void> {
   }
 }
 
+async function generateSingleClipWithResolvedContext(clipId: string): Promise<void> {
+  const { project } = useProjectStore.getState();
+  const targetClip = project ? useProjectStore.getState().getClipById(clipId) : null;
+  const taskType = resolveClipGenerationTaskType(targetClip?.generationTaskType);
+  const contextEndTime = targetClip
+    ? targetClip.startTime + Math.max(0, targetClip.duration)
+    : null;
+  const context = project
+    ? taskType === 'text2music'
+      ? { blob: null, endTime: null, warningMessage: null }
+      : taskType === 'complete'
+        ? await (async () => {
+          const vocalContext = await buildCompleteReferenceContext(project, clipId, contextEndTime);
+          if (vocalContext.blob) return vocalContext;
+          return buildRegenerationContextMix(project, clipId, contextEndTime);
+        })()
+        : await buildRegenerationContextMix(project, clipId, contextEndTime)
+    : { blob: null, endTime: null, warningMessage: null };
+  if (context.warningMessage && typeof window !== 'undefined') {
+    window.alert(context.warningMessage);
+  }
+  await generateClipInternal(clipId, context.blob, context.endTime);
+}
+
 /**
  * Generate a single clip (and cascade if needed in the future).
  */
@@ -512,27 +536,25 @@ export async function generateSingleClip(clipId: string): Promise<void> {
   genStore.setIsGenerating(true);
 
   try {
-    const { project } = useProjectStore.getState();
-    const targetClip = project ? useProjectStore.getState().getClipById(clipId) : null;
-    const taskType = resolveClipGenerationTaskType(targetClip?.generationTaskType);
-    const contextEndTime = targetClip
-      ? targetClip.startTime + Math.max(0, targetClip.duration)
-      : null;
-    const context = project
-      ? taskType === 'text2music'
-        ? { blob: null, endTime: null, warningMessage: null }
-        : taskType === 'complete'
-        ? await (async () => {
-          const vocalContext = await buildCompleteReferenceContext(project, clipId, contextEndTime);
-          if (vocalContext.blob) return vocalContext;
-          return buildRegenerationContextMix(project, clipId, contextEndTime);
-        })()
-        : await buildRegenerationContextMix(project, clipId, contextEndTime)
-      : { blob: null, endTime: null, warningMessage: null };
-    if (context.warningMessage && typeof window !== 'undefined') {
-      window.alert(context.warningMessage);
+    await generateSingleClipWithResolvedContext(clipId);
+  } finally {
+    useGenerationStore.getState().setIsGenerating(false);
+  }
+}
+
+/**
+ * Generate multiple clips sequentially within one generation session.
+ */
+export async function generateClipBatch(clipIds: readonly string[]): Promise<void> {
+  if (clipIds.length === 0) return;
+  const genStore = useGenerationStore.getState();
+  if (genStore.isGenerating) return;
+  genStore.setIsGenerating(true);
+
+  try {
+    for (const clipId of clipIds) {
+      await generateSingleClipWithResolvedContext(clipId);
     }
-    await generateClipInternal(clipId, context.blob, context.endTime);
   } finally {
     useGenerationStore.getState().setIsGenerating(false);
   }

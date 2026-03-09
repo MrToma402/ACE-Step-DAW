@@ -3,6 +3,7 @@ import { useGenerationStore } from '../store/generationStore';
 import { useProjectStore } from '../store/projectStore';
 import {
   generateAllTracks,
+  generateClipBatch,
   generateSingleClipCover,
   generateClipWithContext,
   generateSingleClip,
@@ -24,6 +25,11 @@ export function useGeneration() {
   const generateClip = useCallback(async (clipId: string) => {
     if (!project || isGenerating) return;
     await generateSingleClip(clipId);
+  }, [project, isGenerating]);
+
+  const generateClipsBatch = useCallback(async (clipIds: readonly string[]) => {
+    if (!project || isGenerating || clipIds.length === 0) return;
+    await generateClipBatch(clipIds);
   }, [project, isGenerating]);
 
   const generateClipWithSourceContext = useCallback(async (clipId: string, sourceClipId: string) => {
@@ -78,6 +84,7 @@ export function useGeneration() {
     isGenerating,
     generateAll,
     generateClip,
+    generateClipsBatch,
     generateClipWithSourceContext,
     repaintClipRegion,
     coverClipWithReference,

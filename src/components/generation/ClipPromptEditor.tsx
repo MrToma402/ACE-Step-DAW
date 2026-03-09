@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useProjectStore } from '../../store/projectStore';
 import { useUIStore } from '../../store/uiStore';
 import { useGeneration } from '../../hooks/useGeneration';
@@ -6,6 +6,7 @@ import { KEY_SCALES, TIME_SIGNATURES } from '../../constants/tracks';
 import { normalizeSeconds } from '../../utils/time';
 import { isDisposableDraftClip } from '../../features/generation/draftClipCleanup';
 import type { ClipGenerationTaskType } from '../../types/project';
+import { VARIANT_BATCH_OPTIONS, buildVariantClipDraft } from '../../features/generation/variantClipFactory';
 
 function isVocalTrackName(trackName: string): boolean {
   return trackName === 'vocals' || trackName === 'backing_vocals';
@@ -46,10 +47,13 @@ export function ClipPromptEditor() {
   const draftClipId = useUIStore((s) => s.draftClipId);
   const setDraftClipId = useUIStore((s) => s.setDraftClipId);
   const getClipById = useProjectStore((s) => s.getClipById);
+  const getTrackForClip = useProjectStore((s) => s.getTrackForClip);
+  const addTrack = useProjectStore((s) => s.addTrack);
+  const addClip = useProjectStore((s) => s.addClip);
   const updateClip = useProjectStore((s) => s.updateClip);
   const removeClip = useProjectStore((s) => s.removeClip);
   const project = useProjectStore((s) => s.project);
-  const { generateClip, isGenerating } = useGeneration();
+  const { generateClip, generateClipsBatch, isGenerating } = useGeneration();
 
   const clip = editingClipId ? getClipById(editingClipId) : null;
 
@@ -62,6 +66,8 @@ export function ClipPromptEditor() {
   const [generationTaskType, setGenerationTaskType] = useState<ClipGenerationTaskType>('lego');
   const [ditModel, setDitModel] = useState<string | null>(null);
   const [lockedSeed, setLockedSeed] = useState<string | null>(null);
+  const [showVariantMenu, setShowVariantMenu] = useState(false);
+  const variantMenuRef = useRef<HTMLDivElement | null>(null);
   // 'auto' = ACE-Step infers, null = use project default, number = manual override
   const [overrideBpm, setOverrideBpm] = useState<number | 'auto' | null>(null);
   const [overrideKey, setOverrideKey] = useState<string | 'auto' | null>(null);
@@ -82,8 +88,20 @@ export function ClipPromptEditor() {
       setOverrideBpm(clip.bpm === undefined ? null : clip.bpm);
       setOverrideKey(clip.keyScale === undefined ? null : clip.keyScale);
       setOverrideTimeSig(clip.timeSignature === undefined ? null : clip.timeSignature);
+      setShowVariantMenu(false);
     }
   }, [editingClipId]);
+
+  useEffect(() => {
+    if (!showVariantMenu) return undefined;
+    const handleOutsideClick = (event: MouseEvent) => {
+      if (!variantMenuRef.current?.contains(event.target as Node)) {
+        setShowVariantMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutsideClick);
+    return () => document.removeEventListener('mousedown', handleOutsideClick);
+  }, [showVariantMenu]);
 
   if (!editingClipId || !clip || !project) return null;
   const clipTrack = project.tracks.find((track) => track.id === clip.trackId) ?? null;
@@ -97,47 +115,67 @@ export function ClipPromptEditor() {
   const normalizedStart = normalizeSeconds(Math.max(0, startTime), 3);
   const normalizedEnd = normalizeSeconds(Math.max(normalizedStart + 0.5, endTime), 3);
   const normalizedDuration = normalizeSeconds(normalizedEnd - normalizedStart, 3);
+  const resolvedGenerationTaskType = clipTrackIsVocal
+    ? 'lego'
+    : (clipTrackIsComplete ? 'complete' : generationTaskType);
+  const generateDisabled = !prompt || isGenerating;
+
+  const buildClipGenerationUpdates = () => ({
+    prompt,
+    lyrics,
+    startTime: normalizedStart,
+    duration: normalizedDuration,
+    bpm: overrideBpm,
+    keyScale: overrideKey,
+    timeSignature: overrideTimeSig,
+    sampleMode,
+    autoExpandPrompt,
+    generationTaskType: resolvedGenerationTaskType,
+    ditModel,
+    lockedSeed,
+  });
 
   const handleSave = () => {
-    updateClip(editingClipId, {
-      prompt,
-      lyrics,
-      startTime: normalizedStart,
-      duration: normalizedDuration,
-      bpm: overrideBpm,
-      keyScale: overrideKey,
-      timeSignature: overrideTimeSig,
-      sampleMode,
-      autoExpandPrompt,
-      generationTaskType: clipTrackIsVocal ? 'lego' : (clipTrackIsComplete ? 'complete' : generationTaskType),
-      ditModel,
-      lockedSeed,
-    });
+    updateClip(editingClipId, buildClipGenerationUpdates());
+    setShowVariantMenu(false);
     setDraftClipId(null);
     setEditingClip(null);
   };
 
   const handleGenerate = () => {
-    updateClip(editingClipId, {
-      prompt,
-      lyrics,
-      startTime: normalizedStart,
-      duration: normalizedDuration,
-      bpm: overrideBpm,
-      keyScale: overrideKey,
-      timeSignature: overrideTimeSig,
-      sampleMode,
-      autoExpandPrompt,
-      generationTaskType: clipTrackIsVocal ? 'lego' : (clipTrackIsComplete ? 'complete' : generationTaskType),
-      ditModel,
-      lockedSeed,
-    });
+    updateClip(editingClipId, buildClipGenerationUpdates());
+    setShowVariantMenu(false);
     setDraftClipId(null);
     setEditingClip(null);
     generateClip(editingClipId);
   };
 
+  const handleGenerateVariants = (count: number) => {
+    const baseUpdates = buildClipGenerationUpdates();
+    const sourceTrack = clipTrack ?? getTrackForClip(editingClipId);
+    if (!sourceTrack) {
+      setShowVariantMenu(false);
+      return;
+    }
+    updateClip(editingClipId, baseUpdates);
+    const sourceClip = { ...clip, ...baseUpdates };
+    const generatedClipIds: string[] = [];
+    for (let index = 0; index < count; index++) {
+      const variantTrack = addTrack(sourceTrack.trackName);
+      const variantDraft = buildVariantClipDraft(sourceClip);
+      const variantClip = addClip(variantTrack.id, variantDraft);
+      // addClip currently applies a reduced field subset; re-apply per-clip generation options.
+      updateClip(variantClip.id, variantDraft);
+      generatedClipIds.push(variantClip.id);
+    }
+    setShowVariantMenu(false);
+    setDraftClipId(null);
+    setEditingClip(null);
+    void generateClipsBatch(generatedClipIds);
+  };
+
   const handleDelete = () => {
+    setShowVariantMenu(false);
     setDraftClipId(null);
     removeClip(editingClipId);
     setEditingClip(null);
@@ -150,6 +188,7 @@ export function ClipPromptEditor() {
     if (shouldRemoveDraft) {
       removeClip(editingClipId);
     }
+    setShowVariantMenu(false);
     setDraftClipId(null);
     setEditingClip(null);
   };
@@ -504,13 +543,55 @@ export function ClipPromptEditor() {
             >
               Save
             </button>
-            <button
-              onClick={handleGenerate}
-              disabled={!prompt || isGenerating}
-              className="px-4 py-1.5 text-xs font-medium bg-daw-accent hover:bg-daw-accent-hover text-white rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              Generate
-            </button>
+            <div ref={variantMenuRef} className="relative inline-block">
+              <div
+                className={`inline-flex items-center rounded overflow-hidden transition-colors ${
+                  generateDisabled
+                    ? 'bg-daw-panel-light text-slate-500'
+                    : 'bg-daw-accent text-white'
+                }`}
+              >
+                <button
+                  onClick={handleGenerate}
+                  disabled={generateDisabled}
+                  className={`px-4 py-1.5 text-xs font-medium transition-colors ${
+                    generateDisabled
+                      ? 'cursor-not-allowed'
+                      : 'hover:bg-daw-accent-hover'
+                  }`}
+                >
+                  Generate
+                </button>
+                <button
+                  onClick={() => setShowVariantMenu((open) => !open)}
+                  disabled={generateDisabled}
+                  className={`pl-2.5 pr-2 py-1.5 text-xs font-medium border-l border-white/25 transition-colors ${
+                    generateDisabled
+                      ? 'cursor-not-allowed'
+                      : 'hover:bg-daw-accent-hover'
+                  }`}
+                  aria-label="Open generation variant options"
+                >
+                  <span className="material-symbols-outlined text-sm leading-none align-middle">arrow_drop_down</span>
+                </button>
+              </div>
+              {showVariantMenu && (
+                <div className="absolute right-0 bottom-full mb-1 w-48 max-h-56 overflow-y-auto rounded border border-daw-border bg-daw-surface shadow-2xl z-20">
+                  <div className="px-3 py-2 text-[9px] uppercase tracking-[0.12em] font-bold text-slate-500 border-b border-daw-border">
+                    Batch Variants
+                  </div>
+                  {VARIANT_BATCH_OPTIONS.map((count) => (
+                    <button
+                      key={count}
+                      onClick={() => handleGenerateVariants(count)}
+                      className="w-full text-left px-3 py-2 text-xs text-slate-200 hover:bg-white/5 transition-colors"
+                    >
+                      Generate {count} Variants
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>
