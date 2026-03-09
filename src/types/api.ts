@@ -25,7 +25,7 @@ export interface BaseTaskParams {
   batch_size: number;
   audio_format: 'wav' | 'mp3';
   thinking: boolean;
-  model?: string;               // DiT model: turbo (default), sft, base, turbo-shift1, turbo-shift3
+  model?: string;               // DiT model name, e.g. acestep-v15-turbo, acestep-v15-base
   sample_mode?: boolean;
   sample_query?: string;
   use_format?: boolean;

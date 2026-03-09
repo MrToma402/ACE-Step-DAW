@@ -6,6 +6,7 @@ import type {
   CoverTaskParams,
   LegoTaskParams,
   TaskResultItem,
+  Text2MusicTaskParams,
 } from '../types/api';
 import type { ClipGenerationTaskType, InferredMetas, Project } from '../types/project';
 import * as api from './aceStepApi';
@@ -49,6 +50,34 @@ const WAVE_SUBTRACTION_MAX_DECORRELATION = 0.3;
 const WAVE_SUBTRACTION_ORTHOGONALIZE_RESIDUAL = false;
 const WAVE_SUBTRACTION_ORTHOGONALIZE_CAP = 0.18;
 const COMPLETE_DEFAULT_TRACK_CLASSES = ['drums', 'bass', 'guitar', 'keyboard', 'strings', 'synth', 'percussion'];
+const DIT_MODEL_ALIASES: Record<string, string> = {
+  turbo: 'acestep-v15-turbo',
+  'turbo-shift1': 'acestep-v15-turbo-shift1',
+  'turbo-shift3': 'acestep-v15-turbo-shift3',
+  sft: 'acestep-v15-sft',
+  base: 'acestep-v15-base',
+};
+
+function normalizeDitModel(model: string | null | undefined): string | undefined {
+  if (!model) return undefined;
+  const raw = model.trim();
+  if (!raw) return undefined;
+  return DIT_MODEL_ALIASES[raw] ?? raw;
+}
+
+function resolveClipTaskDitModel(
+  taskType: ClipGenerationTaskType,
+  model: string | null | undefined,
+): string | undefined {
+  const normalized = normalizeDitModel(model);
+  if (taskType === 'lego' || taskType === 'complete') {
+    if (normalized && normalized.toLowerCase().includes('base')) {
+      return normalized;
+    }
+    return 'acestep-v15-base';
+  }
+  return normalized;
+}
 
 async function buildLegoSourceAudio(
   previousCumulativeBlob: Blob | null,
@@ -92,7 +121,10 @@ function getClipEndTime(clip: { startTime: number; duration: number }): number {
 }
 
 function resolveClipGenerationTaskType(value: ClipGenerationTaskType | undefined): ClipGenerationTaskType {
-  return value === 'complete' ? 'complete' : 'lego';
+  if (value === 'complete' || value === 'text2music') {
+    return value;
+  }
+  return 'lego';
 }
 
 function isVocalTrackName(trackName: string): boolean {
@@ -487,7 +519,9 @@ export async function generateSingleClip(clipId: string): Promise<void> {
       ? targetClip.startTime + Math.max(0, targetClip.duration)
       : null;
     const context = project
-      ? taskType === 'complete'
+      ? taskType === 'text2music'
+        ? { blob: null, endTime: null, warningMessage: null }
+        : taskType === 'complete'
         ? await (async () => {
           const vocalContext = await buildCompleteReferenceContext(project, clipId, contextEndTime);
           if (vocalContext.blob) return vocalContext;
@@ -521,7 +555,9 @@ export async function generateSingleClipRepaint(
       ? resolveRepaintingBounds(targetClip, { startTime: repaintStartTime, endTime: repaintEndTime })
       : null;
     const context = project
-      ? taskType === 'complete'
+      ? taskType === 'text2music'
+        ? { blob: null, endTime: null, warningMessage: null }
+        : taskType === 'complete'
         ? await (async () => {
           const vocalContext = await buildCompleteReferenceContext(
             project,
@@ -657,7 +693,7 @@ async function generateClipCoverInternal(
       batch_size: 1,
       audio_format: 'wav',
       thinking: project.generationDefaults.thinking,
-      model: project.generationDefaults.model || undefined,
+      model: normalizeDitModel(clip.ditModel ?? project.generationDefaults.model),
       audio_cover_strength: effectiveCoverStrength,
     } as CoverTaskParams;
 
@@ -799,12 +835,15 @@ async function generateClipInternal(
     const generationTaskType = resolveClipGenerationTaskType(clip.generationTaskType);
 
     // Determine src_audio
-    let srcAudioBlob = await buildLegoSourceAudio(
-      previousCumulativeBlob,
-      previousContextEnd,
-      project.totalDuration,
-    );
-    if (generationTaskType === 'complete') {
+    let srcAudioBlob: Blob | null = null;
+    if (generationTaskType === 'lego' || generationTaskType === 'complete') {
+      srcAudioBlob = await buildLegoSourceAudio(
+        previousCumulativeBlob,
+        previousContextEnd,
+        project.totalDuration,
+      );
+    }
+    if (generationTaskType === 'complete' && srcAudioBlob) {
       const engine = getAudioEngine();
       const referenceBuffer = await engine.decodeAudioData(srcAudioBlob);
       const clippedReference = extractClipBufferFromTimeline(
@@ -833,10 +872,15 @@ async function generateClipInternal(
       legoPrompt.instruction,
     );
 
+    const resolvedDitModel = resolveClipTaskDitModel(
+      generationTaskType,
+      clip.ditModel ?? project.generationDefaults.model,
+    );
+
     const baseParams = {
       prompt: legoPrompt.prompt,
       lyrics: generationTextInputs.lyrics,
-      audio_duration: generationTaskType === 'complete' ? clip.duration : project.totalDuration,
+      audio_duration: generationTaskType === 'lego' ? project.totalDuration : clip.duration,
       bpm: resolvedBpm,
       key_scale: resolvedKey,
       time_signature: resolvedTimeSig,
@@ -845,11 +889,11 @@ async function generateClipInternal(
       shift: project.generationDefaults.shift,
       batch_size: 1,
       audio_format: 'wav' as const,
-      // Keep timeline generation aligned with Gradio task-mode behavior (LEGO/Complete => thinking off).
+      // Keep timeline clip generation deterministic: disable thinking for all clip task types.
       thinking: false,
-      model: project.generationDefaults.model || undefined,
+      model: resolvedDitModel,
     };
-    const params: LegoTaskParams | CompleteTaskParams = generationTaskType === 'complete'
+    const params: LegoTaskParams | CompleteTaskParams | Text2MusicTaskParams = generationTaskType === 'complete'
       ? {
         ...baseParams,
         task_type: 'complete',
@@ -858,6 +902,11 @@ async function generateClipInternal(
         use_cot_metas: false,
         use_cot_language: false,
       }
+      : generationTaskType === 'text2music'
+        ? {
+          ...baseParams,
+          task_type: 'text2music',
+        }
       : {
         ...baseParams,
         task_type: 'lego',
@@ -942,18 +991,18 @@ async function generateClipInternal(
     const cumulativeKey = await saveAudioBlob(project.id, clipId, 'cumulative', cumulativeBlob);
 
     // Wave subtraction: isolate this track.
-    // For `complete`, keep the generated mix directly to avoid subtraction artifacts.
+    // For `complete`/`text2music`, keep the generated mix directly to avoid subtraction artifacts.
     const engine = getAudioEngine();
     const cumulativeBuffer = await engine.decodeAudioData(cumulativeBlob);
 
     let previousBuffer: AudioBuffer | null = null;
-    if (generationTaskType !== 'complete' && previousCumulativeBlob) {
+    if (generationTaskType === 'lego' && previousCumulativeBlob && srcAudioBlob) {
       // Use the same sanitized context that was fed to LEGO. This keeps
       // subtraction stable in regions beyond real context coverage.
       previousBuffer = await engine.decodeAudioData(srcAudioBlob);
     }
 
-    const fullIsolatedBuffer = generationTaskType === 'complete'
+    const fullIsolatedBuffer = generationTaskType === 'complete' || generationTaskType === 'text2music'
       ? cumulativeBuffer
       : isolateTrackAudio(engine.ctx, cumulativeBuffer, previousBuffer, {
         alpha: WAVE_SUBTRACTION_ALPHA,
@@ -982,7 +1031,7 @@ async function generateClipInternal(
     const clipStart = currentClip?.startTime ?? clip.startTime;
     const clipDuration = currentClip?.duration ?? clip.duration;
 
-    const fullClipBuffer = generationTaskType === 'complete'
+    const fullClipBuffer = generationTaskType === 'complete' || generationTaskType === 'text2music'
       ? fitBufferToDuration(engine.ctx, fullIsolatedBuffer, clipDuration)
       : extractClipBufferFromTimeline(
         engine.ctx,

@@ -39,6 +39,20 @@ const TRAINING_MODES: ModeInfo[] = [
 ];
 
 const ALL_MODES = [...GENERATION_MODES, ...TRAINING_MODES];
+const DIT_MODEL_ALIASES: Record<string, string> = {
+    turbo: 'acestep-v15-turbo',
+    'turbo-shift1': 'acestep-v15-turbo-shift1',
+    'turbo-shift3': 'acestep-v15-turbo-shift3',
+    sft: 'acestep-v15-sft',
+    base: 'acestep-v15-base',
+};
+
+function normalizeDitModel(model: string | undefined | null): string {
+    if (!model) return '';
+    const raw = model.trim();
+    if (!raw) return '';
+    return DIT_MODEL_ALIASES[raw] ?? raw;
+}
 
 export function ComposerView() {
     const project = useProjectStore((s) => s.project);
@@ -52,6 +66,7 @@ export function ComposerView() {
 
     const { prompt, lyrics, duration, bpm, keyScale, timeSig, steps, guidance, shift, thinking, batchSize, sampleMode, audioFormat, repaintStart, repaintEnd, extractTrack, selectedLora, coverStrength, ditModel, lmModel, lmTemperature, lmTopP, lmCfgScale, useCotCaption, useCotMetas, inferMethod } = cs;
     const { setPrompt, setLyrics, setDuration, setBpm, setKeyScale, setTimeSig, setSteps, setGuidance, setShift, setThinking, setBatchSize, setSampleMode, setAudioFormat, setRepaintStart, setRepaintEnd, setExtractTrack, setSelectedLora, setCoverStrength, setDitModel, setLmModel, setLmTemperature, setLmTopP, setLmCfgScale, setUseCotCaption, setUseCotMetas, setInferMethod } = cs;
+    const selectedDitModel = normalizeDitModel(ditModel || defaults?.model || '');
 
     // Persistent outputs (metadata in store, blobs in IDB)
     const persistedOutputs = cs.outputs;
@@ -114,7 +129,7 @@ export function ComposerView() {
             key_scale: keyScale, time_signature: timeSig,
             inference_steps: steps, guidance_scale: guidance, shift,
             batch_size: batchSize, audio_format: audioFormat, thinking,
-            model: ditModel || defaults?.model || '',
+            model: selectedDitModel,
             sample_mode: sampleMode || undefined,
             // ACE-Step 1.5 advanced params
             use_cot_caption: useCotCaption,
@@ -457,13 +472,13 @@ export function ComposerView() {
                                 <div className="grid grid-cols-2 gap-3">
                                     <div>
                                         <label className="text-[9px] uppercase text-slate-600 font-bold block mb-1 tracking-wider">DiT Model</label>
-                                        <select value={ditModel} onChange={(e) => setDitModel(e.target.value)}
+                                        <select value={selectedDitModel} onChange={(e) => setDitModel(e.target.value)}
                                             className="w-full bg-daw-panel border border-daw-border rounded px-2 py-1.5 text-xs text-white focus:border-daw-accent/50 outline-none">
-                                            <option value="turbo">Turbo (default, 8 steps)</option>
-                                            <option value="turbo-shift1">Turbo Shift-1 (rich details)</option>
-                                            <option value="turbo-shift3">Turbo Shift-3 (clear timbre)</option>
-                                            <option value="sft">SFT (50 steps, CFG)</option>
-                                            <option value="base">Base (extract/lego/complete)</option>
+                                            <option value="acestep-v15-turbo">Turbo (default, 8 steps)</option>
+                                            <option value="acestep-v15-turbo-shift1">Turbo Shift-1 (rich details)</option>
+                                            <option value="acestep-v15-turbo-shift3">Turbo Shift-3 (clear timbre)</option>
+                                            <option value="acestep-v15-sft">SFT (50 steps, CFG)</option>
+                                            <option value="acestep-v15-base">Base (extract/lego/complete)</option>
                                         </select>
                                     </div>
                                     <div>
@@ -478,11 +493,11 @@ export function ComposerView() {
                                     </div>
                                 </div>
                                 <p className="text-[8px] text-slate-700">
-                                    {ditModel === 'turbo' && 'Best balance of creativity and semantics. 8 steps.'}
-                                    {ditModel === 'turbo-shift1' && 'Richer details, weaker semantics. Good for texture.'}
-                                    {ditModel === 'turbo-shift3' && 'Clearer timbre, may sound dry. Good for clean mixes.'}
-                                    {ditModel === 'sft' && 'Supports CFG, 50 steps. Better detail + semantics, slower.'}
-                                    {ditModel === 'base' && 'Master model. Supports extract, lego, complete tasks + LoRA fine-tuning.'}
+                                    {selectedDitModel === 'acestep-v15-turbo' && 'Best balance of creativity and semantics. 8 steps.'}
+                                    {selectedDitModel === 'acestep-v15-turbo-shift1' && 'Richer details, weaker semantics. Good for texture.'}
+                                    {selectedDitModel === 'acestep-v15-turbo-shift3' && 'Clearer timbre, may sound dry. Good for clean mixes.'}
+                                    {selectedDitModel === 'acestep-v15-sft' && 'Supports CFG, 50 steps. Better detail + semantics, slower.'}
+                                    {selectedDitModel === 'acestep-v15-base' && 'Master model. Supports extract, lego, complete tasks + LoRA fine-tuning.'}
                                 </p>
                             </div>
 

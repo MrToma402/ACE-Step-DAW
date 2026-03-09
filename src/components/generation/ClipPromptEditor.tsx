@@ -5,6 +5,7 @@ import { useGeneration } from '../../hooks/useGeneration';
 import { KEY_SCALES, TIME_SIGNATURES } from '../../constants/tracks';
 import { normalizeSeconds } from '../../utils/time';
 import { isDisposableDraftClip } from '../../features/generation/draftClipCleanup';
+import type { ClipGenerationTaskType } from '../../types/project';
 
 function isVocalTrackName(trackName: string): boolean {
   return trackName === 'vocals' || trackName === 'backing_vocals';
@@ -12,6 +13,31 @@ function isVocalTrackName(trackName: string): boolean {
 
 function isCompleteTrackName(trackName: string): boolean {
   return trackName === 'complete';
+}
+
+const DIT_MODEL_ALIASES: Record<string, string> = {
+  turbo: 'acestep-v15-turbo',
+  base: 'acestep-v15-base',
+};
+
+function normalizeDitModelValue(model: string | undefined | null): string | null {
+  if (!model) return null;
+  const raw = model.trim();
+  if (!raw) return null;
+  return DIT_MODEL_ALIASES[raw] ?? raw;
+}
+
+function getModelLabel(model: string | undefined | null): string {
+  const normalized = normalizeDitModelValue(model);
+  if (!normalized) return 'Unset';
+  if (normalized === 'acestep-v15-turbo') return 'Turbo';
+  if (normalized === 'acestep-v15-base') return 'Base';
+  return normalized;
+}
+
+function isTurboDitModel(model: string | undefined | null): boolean {
+  const normalized = normalizeDitModelValue(model);
+  return normalized?.startsWith('acestep-v15-turbo') ?? false;
 }
 
 export function ClipPromptEditor() {
@@ -33,7 +59,8 @@ export function ClipPromptEditor() {
   const [endTime, setEndTime] = useState(0);
   const [sampleMode, setSampleMode] = useState(false);
   const [autoExpandPrompt, setAutoExpandPrompt] = useState(true);
-  const [generationTaskType, setGenerationTaskType] = useState<'lego' | 'complete'>('lego');
+  const [generationTaskType, setGenerationTaskType] = useState<ClipGenerationTaskType>('lego');
+  const [ditModel, setDitModel] = useState<string | null>(null);
   const [lockedSeed, setLockedSeed] = useState<string | null>(null);
   // 'auto' = ACE-Step infers, null = use project default, number = manual override
   const [overrideBpm, setOverrideBpm] = useState<number | 'auto' | null>(null);
@@ -50,6 +77,7 @@ export function ClipPromptEditor() {
       setSampleMode(clip.sampleMode ?? false);
       setAutoExpandPrompt(clip.autoExpandPrompt ?? true);
       setGenerationTaskType(clip.generationTaskType ?? 'lego');
+      setDitModel(normalizeDitModelValue(clip.ditModel));
       setLockedSeed(clip.lockedSeed ?? null);
       setOverrideBpm(clip.bpm === undefined ? null : clip.bpm);
       setOverrideKey(clip.keyScale === undefined ? null : clip.keyScale);
@@ -82,6 +110,7 @@ export function ClipPromptEditor() {
       sampleMode,
       autoExpandPrompt,
       generationTaskType: clipTrackIsVocal ? 'lego' : (clipTrackIsComplete ? 'complete' : generationTaskType),
+      ditModel,
       lockedSeed,
     });
     setDraftClipId(null);
@@ -100,6 +129,7 @@ export function ClipPromptEditor() {
       sampleMode,
       autoExpandPrompt,
       generationTaskType: clipTrackIsVocal ? 'lego' : (clipTrackIsComplete ? 'complete' : generationTaskType),
+      ditModel,
       lockedSeed,
     });
     setDraftClipId(null);
@@ -180,18 +210,28 @@ export function ClipPromptEditor() {
               <label className="block text-xs text-zinc-400 mb-1">Generation Mode</label>
               <select
                 value={generationTaskType}
-                onChange={(e) => setGenerationTaskType(e.target.value as 'lego' | 'complete')}
+                onChange={(e) => setGenerationTaskType(e.target.value as ClipGenerationTaskType)}
                 className="w-full px-3 py-1.5 text-sm bg-daw-bg border border-daw-border rounded focus:outline-none focus:border-daw-accent"
               >
+                <option value="text2music">Text2Music (no timeline context)</option>
                 <option value="lego">LEGO (full mix context)</option>
                 <option value="complete">Complete (vocal reference)</option>
               </select>
-              <p className="text-[10px] text-zinc-500 mt-1">
-                LEGO uses the full arrangement context. Complete prioritizes vocal-only reference to build accompaniment.
-              </p>
-              <p className="text-[10px] text-zinc-500 mt-1">
-                Thinking is forced off for LEGO/Complete timeline generation (Gradio-aligned behavior).
-              </p>
+              {generationTaskType === 'text2music' && (
+                <p className="text-[10px] text-zinc-500 mt-1">
+                  Text2Music ignores timeline context and generates directly from prompt/lyrics for this clip duration.
+                </p>
+              )}
+              {(generationTaskType === 'lego' || generationTaskType === 'complete') && (
+                <>
+                  <p className="text-[10px] text-zinc-500 mt-1">
+                    LEGO uses the full arrangement context. Complete prioritizes vocal-only reference to build accompaniment.
+                  </p>
+                  <p className="text-[10px] text-zinc-500 mt-1">
+                    Thinking is forced off for LEGO/Complete timeline generation (Gradio-aligned behavior).
+                  </p>
+                </>
+              )}
               {generationTaskType === 'complete' && !hasReadyVocalReference && (
                 <p className="text-[10px] text-amber-400 mt-1">
                   No ready vocal clips found. Complete will fall back to full mix context.
@@ -210,6 +250,39 @@ export function ClipPromptEditor() {
               </p>
             </div>
           )}
+
+          <div>
+            <label className="block text-xs text-zinc-400 mb-1">DiT Model</label>
+            <select
+              value={ditModel ?? 'project'}
+              onChange={(e) => {
+                const next = e.target.value;
+                const resolvedModel = next === 'project'
+                  ? normalizeDitModelValue(project.generationDefaults.model)
+                  : normalizeDitModelValue(next);
+                if (!clipTrackIsVocal && !clipTrackIsComplete && isTurboDitModel(resolvedModel)) {
+                  setGenerationTaskType('text2music');
+                }
+                setDitModel(next === 'project' ? null : next);
+              }}
+              className="w-full px-3 py-1.5 text-sm bg-daw-bg border border-daw-border rounded focus:outline-none focus:border-daw-accent"
+            >
+              <option value="project">Project Default ({getModelLabel(project.generationDefaults.model)})</option>
+              <option value="acestep-v15-turbo" disabled={clipTrackIsVocal || clipTrackIsComplete}>
+                Turbo {clipTrackIsVocal || clipTrackIsComplete ? '(Text2Music only)' : ''}
+              </option>
+              <option value="acestep-v15-base">Base</option>
+            </select>
+            {generationTaskType === 'text2music' ? (
+              <p className="text-[10px] text-zinc-500 mt-1">
+                Text2Music supports Turbo and Base.
+              </p>
+            ) : (
+              <p className="text-[10px] text-zinc-500 mt-1">
+                LEGO/Complete run on Base.
+              </p>
+            )}
+          </div>
 
           <div>
             <label className="block text-xs text-zinc-400 mb-1">

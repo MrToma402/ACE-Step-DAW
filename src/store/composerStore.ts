@@ -47,7 +47,7 @@ interface ComposerState {
 
     // New ACE-Step 1.5 params
     coverStrength: number;       // 0.0-1.0 for Cover mode
-    ditModel: string;            // turbo, sft, base, turbo-shift1, turbo-shift3
+    ditModel: string;            // acestep-v15-turbo, acestep-v15-sft, acestep-v15-base, turbo-shift variants
     lmModel: string;             // none, 0.6B, 1.7B, 4B
     lmTemperature: number;       // 0.0-2.0
     lmTopP: number;              // 0.0-1.0
@@ -118,7 +118,7 @@ export const useComposerStore = create<ComposerState>()(
 
             // ACE-Step 1.5 defaults
             coverStrength: 1.0,
-            ditModel: 'turbo',
+            ditModel: 'acestep-v15-turbo',
             lmModel: '1.7B',
             lmTemperature: 0.85,
             lmTopP: 0.9,

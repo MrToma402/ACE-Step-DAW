@@ -8,7 +8,7 @@ export type TrackName =
 export type ClipGenerationStatus =
   | 'empty' | 'queued' | 'generating' | 'processing' | 'ready' | 'error' | 'stale';
 
-export type ClipGenerationTaskType = 'lego' | 'complete';
+export type ClipGenerationTaskType = 'lego' | 'complete' | 'text2music';
 
 export interface InferredMetas {
   bpm?: number;
@@ -43,6 +43,8 @@ export interface Clip {
   sampleMode?: boolean;
   autoExpandPrompt?: boolean;
   generationTaskType?: ClipGenerationTaskType;
+  // Optional per-clip DiT override. null/undefined means use project default model.
+  ditModel?: string | null;
   // Crop support: original audio duration and offset into it
   audioDuration?: number;  // Full audio buffer duration (set at gen/import)
   audioOffset?: number;    // Offset into audio buffer (seconds), default 0
