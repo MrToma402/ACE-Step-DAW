@@ -46,7 +46,10 @@ export function TrackHeader({
   onDragEndTrack,
 }: TrackHeaderProps) {
   const setEditingClip = useUIStore((s) => s.setEditingClip);
+  const selectedTrackIds = useUIStore((s) => s.selectedTrackIds);
+  const clearSelectedTracks = useUIStore((s) => s.clearSelectedTracks);
   const updateTrack = useProjectStore((s) => s.updateTrack);
+  const removeTracks = useProjectStore((s) => s.removeTracks);
   const removeTrack = useProjectStore((s) => s.removeTrack);
   const project = useProjectStore((s) => s.project);
   const workspace = useArrangementStore((s) =>
@@ -211,6 +214,20 @@ export function TrackHeader({
     openExtractDialog();
   };
 
+  const canDeleteSelectedTracks = selectedTrackIds.size > 1 && selectedTrackIds.has(track.id);
+  const deleteLabel = canDeleteSelectedTracks
+    ? `Delete Selected Tracks (${selectedTrackIds.size})`
+    : 'Delete Track';
+  const handleDeleteTracks = () => {
+    closeCtxMenu();
+    if (canDeleteSelectedTracks) {
+      removeTracks(Array.from(selectedTrackIds));
+      clearSelectedTracks();
+      return;
+    }
+    removeTrack(track.id);
+  };
+
   return (
     <>
       <div
@@ -340,6 +357,8 @@ export function TrackHeader({
           y={ctxMenu.y}
           canExtract={canExtract}
           onExtract={handleExtractToTracks}
+          deleteLabel={deleteLabel}
+          onDelete={handleDeleteTracks}
           onClose={closeCtxMenu}
         />
       )}

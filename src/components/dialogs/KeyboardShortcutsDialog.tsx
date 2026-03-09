@@ -1,5 +1,9 @@
 import { useEffect, useState } from 'react';
 import { useUIStore, type ShortcutBindings } from '../../store/uiStore';
+import {
+  buildShortcutBindingFromKeyboardEvent,
+  formatShortcutBinding,
+} from '../../features/shortcuts/shortcutBinding';
 
 type ShortcutAction = keyof ShortcutBindings;
 
@@ -8,6 +12,7 @@ const ACTION_LABELS: Record<ShortcutAction, string> = {
   playSelectedIsolation: 'Play selected clips (isolation)',
   playSelectedIsolationLoop: 'Play selected clips in loop (isolation)',
   deleteSelected: 'Delete selected tracks or clips',
+  deleteSelectedTracks: 'Delete selected tracks',
   mergeSelected: 'Merge selected clips',
 };
 
@@ -16,15 +21,6 @@ const BUILT_IN_SHORTCUTS = [
   { label: 'Duplicate to new layer', keys: ['Ctrl', 'Shift', 'D'] },
   { label: 'Hold for repaint drag-select', keys: ['Shift + Drag'] },
 ] as const;
-
-function formatKeyCode(code: string): string {
-  if (code === 'Space') return 'Space';
-  if (code === 'Backspace') return 'Backspace';
-  if (code === 'Delete') return 'Delete';
-  if (code.startsWith('Key')) return code.slice(3).toUpperCase();
-  if (code.startsWith('Digit')) return code.slice(5);
-  return code;
-}
 
 function formatKeyCombo(keys: readonly string[]): string {
   return keys.join(' + ');
@@ -48,7 +44,9 @@ export function KeyboardShortcutsDialog() {
         setCapturingAction(null);
         return;
       }
-      setShortcutBinding(capturingAction, e.code);
+      const binding = buildShortcutBindingFromKeyboardEvent(e);
+      if (!binding) return;
+      setShortcutBinding(capturingAction, binding);
       setCapturingAction(null);
     };
 
@@ -86,7 +84,7 @@ export function KeyboardShortcutsDialog() {
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-xs text-zinc-300">{ACTION_LABELS[action]}</span>
                   <kbd className="rounded bg-daw-surface-2 px-2 py-1 text-xs text-zinc-100">
-                    {formatKeyCode(shortcutBindings[action])}
+                    {formatShortcutBinding(shortcutBindings[action])}
                   </kbd>
                 </div>
                 <div className="mt-2 flex items-center gap-2">

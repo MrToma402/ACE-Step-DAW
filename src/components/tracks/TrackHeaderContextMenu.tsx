@@ -3,6 +3,8 @@ interface TrackHeaderContextMenuProps {
   y: number;
   canExtract: boolean;
   onExtract: () => void;
+  deleteLabel: string;
+  onDelete: () => void;
   onClose: () => void;
 }
 
@@ -11,6 +13,8 @@ export function TrackHeaderContextMenu({
   y,
   canExtract,
   onExtract,
+  deleteLabel,
+  onDelete,
   onClose,
 }: TrackHeaderContextMenuProps) {
   return (
@@ -38,6 +42,18 @@ export function TrackHeaderContextMenu({
         >
           <span className="material-symbols-outlined text-xs">call_split</span>
           Extract To Tracks
+        </button>
+        <div className="my-1 border-t border-daw-border" />
+        <button
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            onDelete();
+          }}
+          className="w-full text-left px-3 py-1.5 text-xs text-red-400 hover:bg-red-900/20 transition-colors flex items-center gap-2"
+        >
+          <span className="material-symbols-outlined text-xs">delete</span>
+          {deleteLabel} (Shift+Delete)
         </button>
       </div>
     </>

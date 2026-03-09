@@ -7,6 +7,7 @@ export interface ShortcutBindings {
   playSelectedIsolation: string;
   playSelectedIsolationLoop: string;
   deleteSelected: string;
+  deleteSelectedTracks: string;
   mergeSelected: string;
 }
 
@@ -104,6 +105,7 @@ const DEFAULT_SHORTCUT_BINDINGS: ShortcutBindings = {
   playSelectedIsolation: 'KeyP',
   playSelectedIsolationLoop: 'KeyR',
   deleteSelected: 'Backspace',
+  deleteSelectedTracks: 'Shift+Delete',
   mergeSelected: 'KeyM',
 };
 

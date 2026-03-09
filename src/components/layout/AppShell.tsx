@@ -27,6 +27,8 @@ import { useDawLayoutResize } from '../../hooks/useDawLayoutResize';
 import { resolveDuplicateShortcutAction } from '../../features/timeline/duplicateShortcut';
 import { isDisposableDraftClip } from '../../features/generation/draftClipCleanup';
 import { resolveDeleteSelectionTarget } from '../../features/selection/deleteSelectionTarget';
+import { resolveTracksForDeleteShortcut } from '../../features/selection/deleteTracksShortcutTarget';
+import { matchesShortcutBinding } from '../../features/shortcuts/shortcutBinding';
 
 export function AppShell() {
   const { resumeOnGesture } = useAudioEngine();
@@ -210,28 +212,28 @@ export function AppShell() {
         return;
       }
 
-      if (e.code === shortcutBindings.playPause) {
+      if (matchesShortcutBinding(e, shortcutBindings.playPause)) {
         e.preventDefault();
         if (isPlaying) pause();
         else play();
         return;
       }
 
-      if (e.code === shortcutBindings.playSelectedIsolation) {
+      if (matchesShortcutBinding(e, shortcutBindings.playSelectedIsolation)) {
         if (activeTab !== 'daw' || selectedClipIds.size === 0) return;
         e.preventDefault();
         void playSelectedClipsInIsolation(Array.from(selectedClipIds));
         return;
       }
 
-      if (e.code === shortcutBindings.playSelectedIsolationLoop) {
+      if (matchesShortcutBinding(e, shortcutBindings.playSelectedIsolationLoop)) {
         if (activeTab !== 'daw' || selectedClipIds.size === 0) return;
         e.preventDefault();
         void playSelectedClipsInIsolationLoop(Array.from(selectedClipIds));
         return;
       }
 
-      if (e.code === shortcutBindings.mergeSelected) {
+      if (matchesShortcutBinding(e, shortcutBindings.mergeSelected)) {
         if (activeTab !== 'daw' || selectedClipIds.size < 2) return;
         if (e.repeat) return;
         e.preventDefault();
@@ -249,7 +251,22 @@ export function AppShell() {
         return;
       }
 
-      if (e.code === shortcutBindings.deleteSelected) {
+      if (matchesShortcutBinding(e, shortcutBindings.deleteSelectedTracks)) {
+        if (activeTab !== 'daw') return;
+        const trackIdsToDelete = resolveTracksForDeleteShortcut({
+          selectedTrackIds,
+          selectedClipIds,
+          resolveTrackIdForClip: (clipId) => getTrackForClip(clipId)?.id ?? null,
+        });
+        if (trackIdsToDelete.length === 0) return;
+        e.preventDefault();
+        removeTracks(trackIdsToDelete);
+        clearSelectedTracks();
+        deselectAll();
+        return;
+      }
+
+      if (matchesShortcutBinding(e, shortcutBindings.deleteSelected)) {
         if (activeTab !== 'daw') return;
         const deleteTarget = resolveDeleteSelectionTarget(selectedTrackIds.size, selectedClipIds.size);
         if (deleteTarget === 'none') return;
