@@ -7,6 +7,7 @@ import { useGenerationStore } from '../../store/generationStore';
 import { useGeneration } from '../../hooks/useGeneration';
 import { hexToRgba } from '../../utils/color';
 import { isArrangementClipSelected } from '../../features/arrangement/selection';
+import { resolveClipRangeSelection } from '../../features/selection/clipRangeSelection';
 import { useExtractToTracksDialog } from '../../hooks/useExtractToTracksDialog';
 import { ClipContextMenu } from './clip-block/ClipContextMenu';
 import { ClipVisualBody } from './clip-block/ClipVisualBody';
@@ -100,8 +101,41 @@ export function ClipBlock({ clip, track }: ClipBlockProps) {
     e.stopPropagation();
     if (dragRef.current) return;
     setCtxMenu(null);
-    selectClip(clip.id, e.metaKey || e.ctrlKey);
-  }, [clip.id, selectClip]);
+    const additiveSelection = e.metaKey || e.ctrlKey;
+    const rangeSelection = additiveSelection && e.shiftKey;
+
+    if (rangeSelection && project) {
+      const orderedClipIds = project.tracks
+        .filter((candidateTrack) => !candidateTrack.hidden)
+        .flatMap((candidateTrack) => candidateTrack.clips
+          .filter((candidateClip) =>
+            !hideInactiveTakes || isArrangementClipSelected(candidateClip, workspace ?? null))
+          .map((candidateClip) => ({
+            id: candidateClip.id,
+            startTime: candidateClip.startTime,
+            trackOrder: candidateTrack.order,
+          })))
+        .sort((a, b) =>
+          a.startTime - b.startTime
+          || a.trackOrder - b.trackOrder
+          || a.id.localeCompare(b.id))
+        .map((candidateClip) => candidateClip.id);
+
+      const nextSelectedClipIds = resolveClipRangeSelection({
+        orderedClipIds,
+        selectedClipIds,
+        targetClipId: clip.id,
+      });
+
+      useUIStore.setState({
+        selectedClipIds: nextSelectedClipIds,
+        selectedTrackIds: new Set(),
+      });
+      return;
+    }
+
+    selectClip(clip.id, additiveSelection);
+  }, [clip.id, dragRef, hideInactiveTakes, project, selectClip, selectedClipIds, workspace]);
 
   const handleDoubleClick = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
