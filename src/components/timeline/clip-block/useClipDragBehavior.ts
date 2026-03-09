@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { snapTime } from '../../../features/arrangement/snap';
 import type { GridResolution } from '../../../features/arrangement/types';
 import { clampGroupMoveDelta } from '../../../features/timeline/clipGroupMove';
+import { shouldSelectClipOnPointerDown } from '../../../features/selection/clipPointerDownSelection';
 import { normalizeSeconds } from '../../../utils/time';
 import type { Clip, Project, Track } from '../../../types/project';
 import type { ClipDragPreview, ExtendConfirmRequest, RepaintRequest } from '../../../store/uiStore';
@@ -155,7 +156,8 @@ export function useClipDragBehavior({
     let lastPreviewTrack = '';
     const bpm = project?.bpm ?? 120;
     const totalDuration = project?.totalDuration ?? 600;
-    if (mode === 'move' && !isSelected) {
+    const additiveSelection = e.metaKey || e.ctrlKey;
+    if (shouldSelectClipOnPointerDown({ mode, isSelected, additive: additiveSelection })) {
       selectClip(clip.id, false);
     }
     const groupDragClipIds =
