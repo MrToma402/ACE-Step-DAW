@@ -1,6 +1,7 @@
 import { useEffect, useCallback, useRef, type MutableRefObject } from 'react';
 import { Toolbar } from './Toolbar';
 import { StatusBar } from './StatusBar';
+import { ExtractToTracksStatusBar } from './ExtractToTracksStatusBar';
 import { TrackList } from '../tracks/TrackList';
 import { Timeline } from '../timeline/Timeline';
 import { GenerationPanel } from '../generation/GenerationPanel';
@@ -434,6 +435,7 @@ export function AppShell() {
         </div>
       )}
 
+      <ExtractToTracksStatusBar />
       <StatusBar />
 
       {/* Modals */}

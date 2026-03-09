@@ -18,7 +18,6 @@ import { isArrangementClipSelected } from '../../features/arrangement/selection'
 import { shouldBlockTrackDragForTagName } from './trackDragGuards';
 import { TrackHeaderContextMenu } from './TrackHeaderContextMenu';
 import { useExtractToTracksDialog } from '../../hooks/useExtractToTracksDialog';
-import { ExtractToTracksDialog } from '../dialogs/ExtractToTracksDialog';
 
 interface TrackHeaderProps {
   track: Track;
@@ -63,18 +62,10 @@ export function TrackHeader({
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
   const {
     canExtract,
-    canStart,
-    canCancel,
-    mode: extractDialogMode,
-    progress: extractProgress,
-    result: extractResult,
-    errorMessage: extractErrorMessage,
     openConfirmDialog: openExtractDialog,
-    closeDialog: closeExtractDialog,
-    confirmExtract: confirmExtract,
-    cancelExtract,
   } = useExtractToTracksDialog({
     sourceTrackId: track.id,
+    sourceLabel: `track "${track.displayName}"`,
   });
 
   const volumePct = Math.round(track.volume * 100);
@@ -361,18 +352,6 @@ export function TrackHeader({
           onClose={closeCtxMenu}
         />
       )}
-      <ExtractToTracksDialog
-        mode={extractDialogMode}
-        sourceLabel={`track "${track.displayName}"`}
-        canStart={canStart}
-        canCancel={canCancel}
-        progress={extractProgress}
-        result={extractResult}
-        errorMessage={extractErrorMessage}
-        onClose={closeExtractDialog}
-        onConfirm={confirmExtract}
-        onCancel={cancelExtract}
-      />
     </>
   );
 }

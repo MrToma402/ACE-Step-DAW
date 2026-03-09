@@ -1,16 +1,14 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback } from 'react';
 import { useGenerationStore } from '../store/generationStore';
-import {
-  extractTrackToNewTracks,
-  type ExtractTrackProgress,
-  type ExtractTrackStemsResult,
-} from '../services/stemExtractionPipeline';
+import type { ExtractTrackProgress, ExtractTrackStemsResult } from '../services/stemExtractionPipeline';
+import { useExtractToTracksStatusStore } from '../store/extractToTracksStatusStore';
 
 export type ExtractToTracksDialogMode = 'closed' | 'confirm' | 'running' | 'result' | 'error';
 
 interface UseExtractToTracksDialogOptions {
   sourceTrackId: string;
   sourceClipId?: string;
+  sourceLabel?: string;
 }
 
 interface UseExtractToTracksDialogResult {
@@ -27,97 +25,40 @@ interface UseExtractToTracksDialogResult {
   cancelExtract: () => void;
 }
 
-function isAbortError(error: unknown): boolean {
-  return error instanceof DOMException && error.name === 'AbortError';
-}
-
 export function useExtractToTracksDialog({
   sourceTrackId,
   sourceClipId,
+  sourceLabel,
 }: UseExtractToTracksDialogOptions): UseExtractToTracksDialogResult {
   const isGenerating = useGenerationStore((s) => s.isGenerating);
-  const isMountedRef = useRef(true);
-  const abortRef = useRef<AbortController | null>(null);
-  const [mode, setMode] = useState<ExtractToTracksDialogMode>('closed');
-  const [progress, setProgress] = useState<ExtractTrackProgress | null>(null);
-  const [result, setResult] = useState<ExtractTrackStemsResult | null>(null);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-
-  useEffect(
-    () => () => {
-      isMountedRef.current = false;
-    },
-    [],
-  );
+  const mode = useExtractToTracksStatusStore((s) => s.mode);
+  const progress = useExtractToTracksStatusStore((s) => s.progress);
+  const result = useExtractToTracksStatusStore((s) => s.result);
+  const errorMessage = useExtractToTracksStatusStore((s) => s.errorMessage);
+  const startExtraction = useExtractToTracksStatusStore((s) => s.startExtraction);
+  const cancelExtraction = useExtractToTracksStatusStore((s) => s.cancelExtraction);
+  const closeStatus = useExtractToTracksStatusStore((s) => s.closeStatus);
 
   const canExtract = !isGenerating && mode !== 'running';
-  const canStart = mode === 'confirm' && !isGenerating;
+  const canStart = canExtract;
   const canCancel = mode === 'running';
 
   const openConfirmDialog = useCallback(() => {
     if (!canExtract) return;
-    setProgress(null);
-    setResult(null);
-    setErrorMessage(null);
-    setMode('confirm');
-  }, [canExtract]);
+    void startExtraction({ sourceTrackId, sourceClipId, sourceLabel });
+  }, [canExtract, sourceClipId, sourceLabel, sourceTrackId, startExtraction]);
 
   const closeDialog = useCallback(() => {
-    if (mode === 'running') {
-      abortRef.current?.abort();
-      abortRef.current = null;
-    }
-    setMode('closed');
-  }, [mode]);
+    closeStatus();
+  }, [closeStatus]);
 
   const cancelExtract = useCallback(() => {
-    abortRef.current?.abort();
-    abortRef.current = null;
-    setMode('closed');
-  }, []);
+    cancelExtraction();
+  }, [cancelExtraction]);
 
   const confirmExtract = useCallback(() => {
-    if (!canStart || mode === 'running') return;
-    setProgress({
-      phase: 'preparing',
-      completed: 0,
-      total: 1,
-      currentTrackName: null,
-    });
-    setResult(null);
-    setErrorMessage(null);
-    setMode('running');
-    const controller = new AbortController();
-    abortRef.current = controller;
-
-    void (async () => {
-      try {
-        const extractionResult = await extractTrackToNewTracks(sourceTrackId, sourceClipId, {
-          signal: controller.signal,
-          onProgress: (nextProgress) => {
-            if (!isMountedRef.current) return;
-            setProgress(nextProgress);
-          },
-        });
-        if (!isMountedRef.current) return;
-        setResult(extractionResult);
-        setMode('result');
-      } catch (error) {
-        if (!isMountedRef.current) return;
-        if (isAbortError(error)) {
-          setMode('closed');
-          return;
-        }
-        const message = error instanceof Error ? error.message : 'Stem extraction failed';
-        setErrorMessage(message);
-        setMode('error');
-      } finally {
-        if (abortRef.current === controller) {
-          abortRef.current = null;
-        }
-      }
-    })();
-  }, [canStart, mode, sourceClipId, sourceTrackId]);
+    openConfirmDialog();
+  }, [openConfirmDialog]);
 
   return {
     canExtract,

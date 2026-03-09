@@ -8,7 +8,6 @@ import { useGeneration } from '../../hooks/useGeneration';
 import { hexToRgba } from '../../utils/color';
 import { isArrangementClipSelected } from '../../features/arrangement/selection';
 import { useExtractToTracksDialog } from '../../hooks/useExtractToTracksDialog';
-import { ExtractToTracksDialog } from '../dialogs/ExtractToTracksDialog';
 import { ClipContextMenu } from './clip-block/ClipContextMenu';
 import { ClipVisualBody } from './clip-block/ClipVisualBody';
 import { useClipVisualState } from './clip-block/useClipVisualState';
@@ -63,19 +62,11 @@ export function ClipBlock({ clip, track }: ClipBlockProps) {
   const [isHovered, setIsHovered] = useState(false);
   const {
     canExtract,
-    canStart,
-    canCancel,
-    mode: extractDialogMode,
-    progress: extractProgress,
-    result: extractResult,
-    errorMessage: extractErrorMessage,
     openConfirmDialog: openExtractDialog,
-    closeDialog: closeExtractDialog,
-    confirmExtract,
-    cancelExtract,
   } = useExtractToTracksDialog({
     sourceTrackId: track.id,
     sourceClipId: clip.id,
+    sourceLabel: `clip on "${track.displayName}"`,
   });
 
   const {
@@ -259,18 +250,6 @@ export function ClipBlock({ clip, track }: ClipBlockProps) {
           hasReferenceAudio={!!clip.isolatedAudioKey}
         />
       )}
-      <ExtractToTracksDialog
-        mode={extractDialogMode}
-        sourceLabel={`clip on "${track.displayName}"`}
-        canStart={canStart}
-        canCancel={canCancel}
-        progress={extractProgress}
-        result={extractResult}
-        errorMessage={extractErrorMessage}
-        onClose={closeExtractDialog}
-        onConfirm={confirmExtract}
-        onCancel={cancelExtract}
-      />
     </>
   );
 }
