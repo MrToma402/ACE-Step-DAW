@@ -28,7 +28,8 @@ export function ClipBlock({ clip, track }: ClipBlockProps) {
   const clipDragPreview = useUIStore((s) => s.clipDragPreview);
   const setClipDragPreview = useUIStore((s) => s.setClipDragPreview);
   const setClipGestureActive = useUIStore((s) => s.setClipGestureActive);
-  const isShiftPressed = useUIStore((s) => s.isShiftPressed);
+  const isRepaintModeActive = useUIStore((s) => s.isRepaintModeActive);
+  const setRepaintModeActive = useUIStore((s) => s.setRepaintModeActive);
   const openRepaintDialog = useUIStore((s) => s.openRepaintDialog);
   const openCoverDialog = useUIStore((s) => s.openCoverDialog);
   const openExtendConfirmDialog = useUIStore((s) => s.openExtendConfirmDialog);
@@ -81,7 +82,7 @@ export function ClipBlock({ clip, track }: ClipBlockProps) {
     isSelected,
     selectedClipIds,
     pixelsPerSecond,
-    isShiftPressed,
+    isRepaintModeActive,
     snapEnabled,
     snapResolution,
     selectClip,
@@ -92,6 +93,7 @@ export function ClipBlock({ clip, track }: ClipBlockProps) {
     setClipGestureActive,
     openExtendConfirmDialog,
     openRepaintDialog,
+    setRepaintModeActive,
   });
 
   const handleClick = useCallback((e: React.MouseEvent) => {

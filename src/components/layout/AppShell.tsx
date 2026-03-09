@@ -73,7 +73,7 @@ export function AppShell() {
   const closeExtendConfirmDialog = useUIStore((s) => s.closeExtendConfirmDialog);
   const closeRepaintDialog = useUIStore((s) => s.closeRepaintDialog);
   const closeCoverDialog = useUIStore((s) => s.closeCoverDialog);
-  const setShiftPressed = useUIStore((s) => s.setShiftPressed);
+  const toggleRepaintMode = useUIStore((s) => s.toggleRepaintMode);
   const ensureProjectWorkspace = useArrangementStore((s) => s.ensureProjectWorkspace);
   const { isPlaying, play, playSelectedClipsInIsolation, playSelectedClipsInIsolationLoop, pause } = useTransport();
   const { sidebarWidth, mixerHeight, startSidebarResize, startMixerResize } = useDawLayoutResize();
@@ -103,25 +103,6 @@ export function AppShell() {
     if (nextSelected.length === selectedTrackIds.size) return;
     setSelectedTracks(nextSelected);
   }, [project, selectedTrackIds, setSelectedTracks]);
-
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Shift') setShiftPressed(true);
-    };
-    const handleKeyUp = (e: KeyboardEvent) => {
-      if (e.key === 'Shift') setShiftPressed(false);
-    };
-    const handleBlur = () => setShiftPressed(false);
-    window.addEventListener('keydown', handleKeyDown);
-    window.addEventListener('keyup', handleKeyUp);
-    window.addEventListener('blur', handleBlur);
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-      window.removeEventListener('keyup', handleKeyUp);
-      window.removeEventListener('blur', handleBlur);
-      setShiftPressed(false);
-    };
-  }, [setShiftPressed]);
 
   useEffect(() => {
     const closeTopmostOverlay = (): boolean => {
@@ -210,6 +191,13 @@ export function AppShell() {
             moveClipToTrack(duplicatedClip.id, layerTrack.id, { startTime: sourceClip.startTime });
           }
         }
+        return;
+      }
+
+      if (matchesShortcutBinding(e, shortcutBindings.repaintModeToggle)) {
+        if (activeTab !== 'daw' || e.repeat) return;
+        e.preventDefault();
+        toggleRepaintMode();
         return;
       }
 
@@ -320,6 +308,7 @@ export function AppShell() {
     closeExtendConfirmDialog,
     closeRepaintDialog,
     closeCoverDialog,
+    toggleRepaintMode,
     setEditingClip,
     setDraftClipId,
     setShowExportDialog,

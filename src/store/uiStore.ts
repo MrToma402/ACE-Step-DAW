@@ -3,6 +3,7 @@ import { create } from 'zustand';
 export type ActiveTab = 'daw' | 'composer' | 'analyze';
 
 export interface ShortcutBindings {
+  repaintModeToggle: string;
   playPause: string;
   playSelectedIsolation: string;
   playSelectedIsolationLoop: string;
@@ -59,7 +60,7 @@ interface UIState {
   extendConfirmRequest: ExtendConfirmRequest | null;
   repaintRequest: RepaintRequest | null;
   coverRequest: CoverRequest | null;
-  isShiftPressed: boolean;
+  isRepaintModeActive: boolean;
   showMixer: boolean;
   shortcutBindings: ShortcutBindings;
   clipDragPreview: ClipDragPreview | null;
@@ -91,7 +92,8 @@ interface UIState {
   closeRepaintDialog: () => void;
   openCoverDialog: (request: CoverRequest) => void;
   closeCoverDialog: () => void;
-  setShiftPressed: (pressed: boolean) => void;
+  setRepaintModeActive: (active: boolean) => void;
+  toggleRepaintMode: () => void;
   setShortcutBinding: (action: keyof ShortcutBindings, keyCode: string) => void;
   resetShortcutBindings: () => void;
   setClipDragPreview: (preview: ClipDragPreview | null) => void;
@@ -101,6 +103,7 @@ interface UIState {
 
 const ZOOM_LEVELS = [10, 25, 50, 100, 200, 500];
 const DEFAULT_SHORTCUT_BINDINGS: ShortcutBindings = {
+  repaintModeToggle: 'Ctrl+KeyP',
   playPause: 'Space',
   playSelectedIsolation: 'KeyP',
   playSelectedIsolationLoop: 'KeyR',
@@ -128,7 +131,7 @@ export const useUIStore = create<UIState>((set) => ({
   extendConfirmRequest: null,
   repaintRequest: null,
   coverRequest: null,
-  isShiftPressed: false,
+  isRepaintModeActive: false,
   showMixer: true,
   shortcutBindings: DEFAULT_SHORTCUT_BINDINGS,
   clipDragPreview: null,
@@ -196,7 +199,8 @@ export const useUIStore = create<UIState>((set) => ({
   closeRepaintDialog: () => set({ repaintRequest: null }),
   openCoverDialog: (request) => set({ coverRequest: request }),
   closeCoverDialog: () => set({ coverRequest: null }),
-  setShiftPressed: (pressed) => set({ isShiftPressed: pressed }),
+  setRepaintModeActive: (active) => set({ isRepaintModeActive: active }),
+  toggleRepaintMode: () => set((s) => ({ isRepaintModeActive: !s.isRepaintModeActive })),
   setShortcutBinding: (action, keyCode) =>
     set((s) => ({
       shortcutBindings: {

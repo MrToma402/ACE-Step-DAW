@@ -20,7 +20,7 @@ interface UseClipDragBehaviorOptions {
   isSelected: boolean;
   selectedClipIds: Set<string>;
   pixelsPerSecond: number;
-  isShiftPressed: boolean;
+  isRepaintModeActive: boolean;
   snapEnabled: boolean;
   snapResolution: GridResolution;
   selectClip: (clipId: string, multi?: boolean) => void;
@@ -31,6 +31,7 @@ interface UseClipDragBehaviorOptions {
   setClipGestureActive: (active: boolean) => void;
   openExtendConfirmDialog: (request: ExtendConfirmRequest) => void;
   openRepaintDialog: (request: RepaintRequest) => void;
+  setRepaintModeActive: (active: boolean) => void;
 }
 
 export function useClipDragBehavior({
@@ -40,7 +41,7 @@ export function useClipDragBehavior({
   isSelected,
   selectedClipIds,
   pixelsPerSecond,
-  isShiftPressed,
+  isRepaintModeActive,
   snapEnabled,
   snapResolution,
   selectClip,
@@ -51,6 +52,7 @@ export function useClipDragBehavior({
   setClipGestureActive,
   openExtendConfirmDialog,
   openRepaintDialog,
+  setRepaintModeActive,
 }: UseClipDragBehaviorOptions) {
   const dragRef = useRef(false);
   const repaintDragFrameRef = useRef<number | null>(null);
@@ -79,7 +81,7 @@ export function useClipDragBehavior({
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     if (e.button !== 0) return;
-    const isRepaintSelectionDrag = isShiftPressed || e.shiftKey;
+    const isRepaintSelectionDrag = isRepaintModeActive;
     if (isRepaintSelectionDrag) {
       e.stopPropagation();
       e.preventDefault();
@@ -128,6 +130,7 @@ export function useClipDragBehavior({
           3,
         );
         if (repaintEnd - repaintStart >= 0.1) {
+          setRepaintModeActive(false);
           openRepaintDialog({ clipId: clip.id, startTime: repaintStart, endTime: repaintEnd });
         }
       };
@@ -311,8 +314,9 @@ export function useClipDragBehavior({
     setClipDragPreview,
     setClipGestureActive,
     openExtendConfirmDialog,
-    isShiftPressed,
+    isRepaintModeActive,
     openRepaintDialog,
+    setRepaintModeActive,
     flushRepaintSelectionFrame,
     getClipById,
     track,
@@ -320,7 +324,7 @@ export function useClipDragBehavior({
   ]);
 
   const handleMouseMoveLocal = useCallback((e: React.MouseEvent) => {
-    if (isShiftPressed || e.shiftKey) {
+    if (isRepaintModeActive) {
       const el = e.currentTarget as HTMLElement;
       el.style.cursor = 'crosshair';
       return;
@@ -333,7 +337,7 @@ export function useClipDragBehavior({
     } else {
       el.style.cursor = 'grab';
     }
-  }, [isShiftPressed]);
+  }, [isRepaintModeActive]);
 
   useEffect(() => () => {
     if (repaintDragFrameRef.current != null) {

@@ -45,9 +45,19 @@ test('selecting a clip clears track selection for clip-focused editing', () => {
   assert.equal(useUIStore.getState().selectedTrackIds.size, 0);
 });
 
-test('shortcut defaults include play selected isolation on P', () => {
+test('shortcut defaults include repaint toggle on Ctrl+P and isolation on P', () => {
   const { shortcutBindings } = useUIStore.getState();
+  assert.equal(shortcutBindings.repaintModeToggle, 'Ctrl+KeyP');
   assert.equal(shortcutBindings.playSelectedIsolation, 'KeyP');
   assert.equal(shortcutBindings.playSelectedIsolationLoop, 'KeyR');
   assert.equal(shortcutBindings.deleteSelectedTracks, 'Shift+Delete');
+});
+
+test('toggleRepaintMode toggles repaint drag-select mode', () => {
+  const { setRepaintModeActive, toggleRepaintMode } = useUIStore.getState();
+  setRepaintModeActive(false);
+  toggleRepaintMode();
+  assert.equal(useUIStore.getState().isRepaintModeActive, true);
+  toggleRepaintMode();
+  assert.equal(useUIStore.getState().isRepaintModeActive, false);
 });

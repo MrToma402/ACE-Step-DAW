@@ -8,6 +8,7 @@ import {
 type ShortcutAction = keyof ShortcutBindings;
 
 const ACTION_LABELS: Record<ShortcutAction, string> = {
+  repaintModeToggle: 'Toggle repaint drag-select mode',
   playPause: 'Play / Pause',
   playSelectedIsolation: 'Play selected clips (isolation)',
   playSelectedIsolationLoop: 'Play selected clips in loop (isolation)',
@@ -19,7 +20,7 @@ const ACTION_LABELS: Record<ShortcutAction, string> = {
 const BUILT_IN_SHORTCUTS = [
   { label: 'Duplicate selected clips', keys: ['Ctrl', 'D'] },
   { label: 'Duplicate to new layer', keys: ['Ctrl', 'Shift', 'D'] },
-  { label: 'Hold for repaint drag-select', keys: ['Shift + Drag'] },
+  { label: 'Drag repaint region', keys: ['Mouse drag on clip while mode is active'] },
 ] as const;
 
 function formatKeyCombo(keys: readonly string[]): string {
