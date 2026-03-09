@@ -61,6 +61,7 @@ export function TrackHeader({
   const {
     canExtract,
     canStart,
+    canCancel,
     mode: extractDialogMode,
     progress: extractProgress,
     result: extractResult,
@@ -68,6 +69,7 @@ export function TrackHeader({
     openConfirmDialog: openExtractDialog,
     closeDialog: closeExtractDialog,
     confirmExtract: confirmExtract,
+    cancelExtract,
   } = useExtractToTracksDialog({
     sourceTrackId: track.id,
   });
@@ -345,11 +347,13 @@ export function TrackHeader({
         mode={extractDialogMode}
         sourceLabel={`track "${track.displayName}"`}
         canStart={canStart}
+        canCancel={canCancel}
         progress={extractProgress}
         result={extractResult}
         errorMessage={extractErrorMessage}
         onClose={closeExtractDialog}
         onConfirm={confirmExtract}
+        onCancel={cancelExtract}
       />
     </>
   );

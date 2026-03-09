@@ -10,11 +10,13 @@ interface ExtractToTracksDialogProps {
   mode: ExtractToTracksDialogMode;
   sourceLabel: string;
   canStart: boolean;
+  canCancel: boolean;
   progress: ExtractTrackProgress | null;
   result: ExtractTrackStemsResult | null;
   errorMessage: string | null;
   onClose: () => void;
   onConfirm: () => void;
+  onCancel: () => void;
 }
 
 function trackDisplayName(trackName: TrackName): string {
@@ -25,11 +27,13 @@ export function ExtractToTracksDialog({
   mode,
   sourceLabel,
   canStart,
+  canCancel,
   progress,
   result,
   errorMessage,
   onClose,
   onConfirm,
+  onCancel,
 }: ExtractToTracksDialogProps) {
   if (mode === 'closed') return null;
 
@@ -44,10 +48,10 @@ export function ExtractToTracksDialog({
     ? trackDisplayName(progress.currentTrackName)
     : null;
   const statusLabel = progress?.phase === 'preparing'
-    ? 'Preparing source audio...'
-    : currentTrackLabel
+    ? (progress?.detail ?? 'Preparing source audio...')
+    : (progress?.detail ?? (currentTrackLabel
       ? `Extracting ${currentTrackLabel}...`
-      : 'Extracting stems...';
+      : 'Extracting stems...'));
 
   return (
     <div
@@ -66,9 +70,8 @@ export function ExtractToTracksDialog({
             {mode === 'error' && 'Extraction Failed'}
           </h2>
           <button
-            onClick={onClose}
-            disabled={isRunning}
-            className="text-zinc-500 hover:text-zinc-300 text-lg leading-none disabled:opacity-40 disabled:cursor-not-allowed"
+            onClick={isRunning ? onCancel : onClose}
+            className="text-zinc-500 hover:text-zinc-300 text-lg leading-none"
           >
             ×
           </button>
@@ -161,10 +164,11 @@ export function ExtractToTracksDialog({
 
           {mode === 'running' && (
             <button
-              disabled
-              className="px-4 py-1.5 text-xs font-medium bg-daw-accent text-white rounded opacity-80 cursor-wait"
+              onClick={onCancel}
+              disabled={!canCancel}
+              className="px-4 py-1.5 text-xs font-medium bg-rose-600/90 hover:bg-rose-500 text-white rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Extracting...
+              Cancel
             </button>
           )}
 

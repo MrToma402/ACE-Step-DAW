@@ -16,6 +16,7 @@ interface UseExtractToTracksDialogOptions {
 interface UseExtractToTracksDialogResult {
   canExtract: boolean;
   canStart: boolean;
+  canCancel: boolean;
   mode: ExtractToTracksDialogMode;
   progress: ExtractTrackProgress | null;
   result: ExtractTrackStemsResult | null;
@@ -23,6 +24,11 @@ interface UseExtractToTracksDialogResult {
   openConfirmDialog: () => void;
   closeDialog: () => void;
   confirmExtract: () => void;
+  cancelExtract: () => void;
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof DOMException && error.name === 'AbortError';
 }
 
 export function useExtractToTracksDialog({
@@ -31,6 +37,7 @@ export function useExtractToTracksDialog({
 }: UseExtractToTracksDialogOptions): UseExtractToTracksDialogResult {
   const isGenerating = useGenerationStore((s) => s.isGenerating);
   const isMountedRef = useRef(true);
+  const abortRef = useRef<AbortController | null>(null);
   const [mode, setMode] = useState<ExtractToTracksDialogMode>('closed');
   const [progress, setProgress] = useState<ExtractTrackProgress | null>(null);
   const [result, setResult] = useState<ExtractTrackStemsResult | null>(null);
@@ -45,6 +52,7 @@ export function useExtractToTracksDialog({
 
   const canExtract = !isGenerating && mode !== 'running';
   const canStart = mode === 'confirm' && !isGenerating;
+  const canCancel = mode === 'running';
 
   const openConfirmDialog = useCallback(() => {
     if (!canExtract) return;
@@ -55,9 +63,18 @@ export function useExtractToTracksDialog({
   }, [canExtract]);
 
   const closeDialog = useCallback(() => {
-    if (mode === 'running') return;
+    if (mode === 'running') {
+      abortRef.current?.abort();
+      abortRef.current = null;
+    }
     setMode('closed');
   }, [mode]);
+
+  const cancelExtract = useCallback(() => {
+    abortRef.current?.abort();
+    abortRef.current = null;
+    setMode('closed');
+  }, []);
 
   const confirmExtract = useCallback(() => {
     if (!canStart || mode === 'running') return;
@@ -70,10 +87,13 @@ export function useExtractToTracksDialog({
     setResult(null);
     setErrorMessage(null);
     setMode('running');
+    const controller = new AbortController();
+    abortRef.current = controller;
 
     void (async () => {
       try {
         const extractionResult = await extractTrackToNewTracks(sourceTrackId, sourceClipId, {
+          signal: controller.signal,
           onProgress: (nextProgress) => {
             if (!isMountedRef.current) return;
             setProgress(nextProgress);
@@ -84,9 +104,17 @@ export function useExtractToTracksDialog({
         setMode('result');
       } catch (error) {
         if (!isMountedRef.current) return;
+        if (isAbortError(error)) {
+          setMode('closed');
+          return;
+        }
         const message = error instanceof Error ? error.message : 'Stem extraction failed';
         setErrorMessage(message);
         setMode('error');
+      } finally {
+        if (abortRef.current === controller) {
+          abortRef.current = null;
+        }
       }
     })();
   }, [canStart, mode, sourceClipId, sourceTrackId]);
@@ -94,6 +122,7 @@ export function useExtractToTracksDialog({
   return {
     canExtract,
     canStart,
+    canCancel,
     mode,
     progress,
     result,
@@ -101,5 +130,6 @@ export function useExtractToTracksDialog({
     openConfirmDialog,
     closeDialog,
     confirmExtract,
+    cancelExtract,
   };
 }

@@ -78,6 +78,7 @@ export function ClipBlock({ clip, track }: ClipBlockProps) {
   const {
     canExtract,
     canStart,
+    canCancel,
     mode: extractDialogMode,
     progress: extractProgress,
     result: extractResult,
@@ -85,6 +86,7 @@ export function ClipBlock({ clip, track }: ClipBlockProps) {
     openConfirmDialog: openExtractDialog,
     closeDialog: closeExtractDialog,
     confirmExtract,
+    cancelExtract,
   } = useExtractToTracksDialog({
     sourceTrackId: track.id,
     sourceClipId: clip.id,
@@ -744,11 +746,13 @@ export function ClipBlock({ clip, track }: ClipBlockProps) {
         mode={extractDialogMode}
         sourceLabel={`clip on "${track.displayName}"`}
         canStart={canStart}
+        canCancel={canCancel}
         progress={extractProgress}
         result={extractResult}
         errorMessage={extractErrorMessage}
         onClose={closeExtractDialog}
         onConfirm={confirmExtract}
+        onCancel={cancelExtract}
       />
     </>
   );
