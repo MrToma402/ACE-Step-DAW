@@ -28,7 +28,11 @@ export function TrackHeaderContextMenu({
         style={{ left: x, top: y }}
       >
         <button
-          onClick={onExtract}
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            onExtract();
+          }}
           disabled={!canExtract}
           className="w-full text-left px-3 py-1.5 text-xs text-slate-300 hover:bg-white/5 transition-colors disabled:text-slate-700 disabled:cursor-not-allowed flex items-center gap-2"
         >

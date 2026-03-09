@@ -7,9 +7,9 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from 'react';
 import type { Track } from '../../types/project';
+import { useUIStore } from '../../store/uiStore';
 import { useProjectStore } from '../../store/projectStore';
 import { useArrangementStore } from '../../store/arrangementStore';
-import { useGenerationStore } from '../../store/generationStore';
 import { useAudioImport } from '../../hooks/useAudioImport';
 import { getAudioEngine } from '../../hooks/useAudioEngine';
 import { loadAudioBlobByKey } from '../../services/audioFileManager';
@@ -17,7 +17,8 @@ import { exportMixToWav } from '../../engine/exportMix';
 import { isArrangementClipSelected } from '../../features/arrangement/selection';
 import { shouldBlockTrackDragForTagName } from './trackDragGuards';
 import { TrackHeaderContextMenu } from './TrackHeaderContextMenu';
-import { extractTrackToNewTracks } from '../../services/stemExtractionPipeline';
+import { useExtractToTracksDialog } from '../../hooks/useExtractToTracksDialog';
+import { ExtractToTracksDialog } from '../dialogs/ExtractToTracksDialog';
 
 interface TrackHeaderProps {
   track: Track;
@@ -44,9 +45,9 @@ export function TrackHeader({
   onDropTrack,
   onDragEndTrack,
 }: TrackHeaderProps) {
+  const setEditingClip = useUIStore((s) => s.setEditingClip);
   const updateTrack = useProjectStore((s) => s.updateTrack);
   const removeTrack = useProjectStore((s) => s.removeTrack);
-  const isGenerating = useGenerationStore((s) => s.isGenerating);
   const project = useProjectStore((s) => s.project);
   const workspace = useArrangementStore((s) =>
     project ? s.workspacesByProjectId[project.id] ?? null : null,
@@ -56,8 +57,20 @@ export function TrackHeader({
   const suppressDragRef = useRef(false);
   const lassoStartedRef = useRef(false);
   const [isDownloading, setIsDownloading] = useState(false);
-  const [isExtracting, setIsExtracting] = useState(false);
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
+  const {
+    canExtract,
+    canStart,
+    mode: extractDialogMode,
+    progress: extractProgress,
+    result: extractResult,
+    errorMessage: extractErrorMessage,
+    openConfirmDialog: openExtractDialog,
+    closeDialog: closeExtractDialog,
+    confirmExtract: confirmExtract,
+  } = useExtractToTracksDialog({
+    sourceTrackId: track.id,
+  });
 
   const volumePct = Math.round(track.volume * 100);
 
@@ -190,30 +203,10 @@ export function TrackHeader({
     onSelectTrack?.(track.id, event.ctrlKey || event.metaKey);
   };
 
-  const handleExtractToTracks = async () => {
+  const handleExtractToTracks = () => {
     closeCtxMenu();
-    if (isExtracting || isGenerating) return;
-    setIsExtracting(true);
-    try {
-      const result = await extractTrackToNewTracks(track.id);
-      const createdCount = result.createdTrackNames.length;
-      const skippedCount = result.skippedTrackNames.length;
-      const failedCount = result.failedTrackNames.length;
-      const lines: string[] = [];
-      lines.push(`Created ${createdCount} extracted track(s).`);
-      if (skippedCount > 0) lines.push(`Skipped ${skippedCount} silent stem(s).`);
-      if (failedCount > 0) lines.push(`Failed ${failedCount} stem(s).`);
-      if (typeof window !== 'undefined') {
-        window.alert(lines.join('\n'));
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Stem extraction failed';
-      if (typeof window !== 'undefined') {
-        window.alert(message);
-      }
-    } finally {
-      setIsExtracting(false);
-    }
+    setEditingClip(null);
+    openExtractDialog();
   };
 
   return (
@@ -343,11 +336,21 @@ export function TrackHeader({
         <TrackHeaderContextMenu
           x={ctxMenu.x}
           y={ctxMenu.y}
-          canExtract={!isExtracting && !isGenerating}
-          onExtract={() => { void handleExtractToTracks(); }}
+          canExtract={canExtract}
+          onExtract={handleExtractToTracks}
           onClose={closeCtxMenu}
         />
       )}
+      <ExtractToTracksDialog
+        mode={extractDialogMode}
+        sourceLabel={`track "${track.displayName}"`}
+        canStart={canStart}
+        progress={extractProgress}
+        result={extractResult}
+        errorMessage={extractErrorMessage}
+        onClose={closeExtractDialog}
+        onConfirm={confirmExtract}
+      />
     </>
   );
 }

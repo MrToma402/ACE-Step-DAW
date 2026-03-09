@@ -50,18 +50,12 @@ export function useTimelineInteraction() {
   );
 
   const handleLaneClick = useCallback(
-    (trackId: string, clickX: number, scrollX: number) => {
+    (_trackId: string, clickX: number, scrollX: number) => {
       if (!project) return;
-
-      const rawTime = (clickX + scrollX) / pixelsPerSecond;
-      const snappedTime = snapTime(rawTime, project.bpm, snapEnabled, snapResolution);
-      const beatDuration = 60 / project.bpm;
-      const defaultDuration = beatDuration * project.timeSignature * 2; // 2 bars
-      const endTime = Math.min(snappedTime + defaultDuration, project.totalDuration);
-
-      createClipInRange(trackId, snappedTime, endTime);
+      const time = (clickX + scrollX) / pixelsPerSecond;
+      useTransportStore.getState().seek(Math.max(0, Math.min(time, project.totalDuration)));
     },
-    [project, pixelsPerSecond, createClipInRange, snapEnabled, snapResolution],
+    [project, pixelsPerSecond],
   );
 
   const handleLaneDragSelection = useCallback(

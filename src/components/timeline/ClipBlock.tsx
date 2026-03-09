@@ -11,7 +11,8 @@ import { isArrangementClipSelected } from '../../features/arrangement/selection'
 import { estimateEtaSeconds, extractProgressPercent } from '../../features/generation/trackGenerationStatus';
 import { normalizeSeconds } from '../../utils/time';
 import { clampGroupMoveDelta } from '../../features/timeline/clipGroupMove';
-import { extractTrackToNewTracks } from '../../services/stemExtractionPipeline';
+import { useExtractToTracksDialog } from '../../hooks/useExtractToTracksDialog';
+import { ExtractToTracksDialog } from '../dialogs/ExtractToTracksDialog';
 
 interface ClipBlockProps {
   clip: Clip;
@@ -47,7 +48,6 @@ export function ClipBlock({ clip, track }: ClipBlockProps) {
   const getClipById = useProjectStore((s) => s.getClipById);
   const getTrackForClip = useProjectStore((s) => s.getTrackForClip);
   const generationJobs = useGenerationStore((s) => s.jobs);
-  const isGenerating = useGenerationStore((s) => s.isGenerating);
   const project = useProjectStore((s) => s.project);
   const workspace = useArrangementStore((s) =>
     project ? s.workspacesByProjectId[project.id] : undefined,
@@ -72,10 +72,23 @@ export function ClipBlock({ clip, track }: ClipBlockProps) {
   const repaintDragEndPxRef = useRef(0);
 
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
-  const [isExtracting, setIsExtracting] = useState(false);
   const [repaintSelectionPx, setRepaintSelectionPx] = useState<{ start: number; end: number } | null>(null);
   const [isHovered, setIsHovered] = useState(false);
   const [nowMs, setNowMs] = useState(() => Date.now());
+  const {
+    canExtract,
+    canStart,
+    mode: extractDialogMode,
+    progress: extractProgress,
+    result: extractResult,
+    errorMessage: extractErrorMessage,
+    openConfirmDialog: openExtractDialog,
+    closeDialog: closeExtractDialog,
+    confirmExtract,
+  } = useExtractToTracksDialog({
+    sourceTrackId: track.id,
+    sourceClipId: clip.id,
+  });
 
   const flushRepaintSelectionFrame = useCallback(() => {
     if (repaintDragFrameRef.current != null) return;
@@ -408,32 +421,11 @@ export function ClipBlock({ clip, track }: ClipBlockProps) {
     moveClipToTrack(duplicatedClip.id, layerTrack.id, { startTime: sourceClip.startTime });
   }, [addTrack, clip.id, duplicateClip, getClipById, getTrackForClip, moveClipToTrack]);
   const handleExtractToTracks = useCallback(() => {
-    if (isExtracting || isGenerating) return;
     closeCtxMenu();
-    setIsExtracting(true);
-    void (async () => {
-      try {
-        const result = await extractTrackToNewTracks(track.id, clip.id);
-        const createdCount = result.createdTrackNames.length;
-        const skippedCount = result.skippedTrackNames.length;
-        const failedCount = result.failedTrackNames.length;
-        const lines: string[] = [];
-        lines.push(`Created ${createdCount} extracted track(s).`);
-        if (skippedCount > 0) lines.push(`Skipped ${skippedCount} silent stem(s).`);
-        if (failedCount > 0) lines.push(`Failed ${failedCount} stem(s).`);
-        if (typeof window !== 'undefined') {
-          window.alert(lines.join('\n'));
-        }
-      } catch (error) {
-        const message = error instanceof Error ? error.message : 'Stem extraction failed';
-        if (typeof window !== 'undefined') {
-          window.alert(message);
-        }
-      } finally {
-        setIsExtracting(false);
-      }
-    })();
-  }, [clip.id, closeCtxMenu, isExtracting, isGenerating, track.id]);
+    setDraftClipId(null);
+    setEditingClip(null);
+    openExtractDialog();
+  }, [closeCtxMenu, openExtractDialog, setDraftClipId, setEditingClip]);
 
   const handleMouseMoveLocal = useCallback((e: React.MouseEvent) => {
     if (isShiftPressed || e.shiftKey) {
@@ -738,7 +730,7 @@ export function ClipBlock({ clip, track }: ClipBlockProps) {
           onDuplicate={() => { closeCtxMenu(); duplicateClip(clip.id); }}
           onDuplicateToNewLayer={() => { closeCtxMenu(); handleDuplicateToNewLayer(); }}
           onExtractToTracks={handleExtractToTracks}
-          canExtractToTracks={!isExtracting && !isGenerating}
+          canExtractToTracks={canExtract}
           onMergeSelected={handleMergeSelected}
           canMergeSelected={canMergeSelected}
           onDelete={handleDelete}
@@ -748,6 +740,16 @@ export function ClipBlock({ clip, track }: ClipBlockProps) {
           hasReferenceAudio={!!clip.isolatedAudioKey}
         />
       )}
+      <ExtractToTracksDialog
+        mode={extractDialogMode}
+        sourceLabel={`clip on "${track.displayName}"`}
+        canStart={canStart}
+        progress={extractProgress}
+        result={extractResult}
+        errorMessage={extractErrorMessage}
+        onClose={closeExtractDialog}
+        onConfirm={confirmExtract}
+      />
     </>
   );
 }
@@ -832,7 +834,11 @@ function ClipContextMenu({
           Duplicate to New Layer (Ctrl+Shift+D)
         </button>
         <button
-          onClick={onExtractToTracks}
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            onExtractToTracks();
+          }}
           disabled={!canExtractToTracks}
           className="w-full text-left px-3 py-1.5 text-xs text-slate-300 hover:bg-white/5 transition-colors disabled:text-slate-700 disabled:cursor-not-allowed flex items-center gap-2"
         >

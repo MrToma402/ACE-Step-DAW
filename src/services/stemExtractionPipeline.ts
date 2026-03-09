@@ -25,6 +25,19 @@ export interface ExtractTrackStemsResult {
   failedTrackNames: Array<{ trackName: TrackName; reason: string }>;
 }
 
+export type ExtractTrackProgressPhase = 'preparing' | 'extracting' | 'done';
+
+export interface ExtractTrackProgress {
+  phase: ExtractTrackProgressPhase;
+  completed: number;
+  total: number;
+  currentTrackName: TrackName | null;
+}
+
+interface ExtractTrackOptions {
+  onProgress?: (progress: ExtractTrackProgress) => void;
+}
+
 interface SourceMix {
   blob: Blob;
   duration: number;
@@ -123,6 +136,7 @@ async function buildTrackSourceMix(
 export async function extractTrackToNewTracks(
   sourceTrackId: string,
   sourceClipId?: string,
+  options: ExtractTrackOptions = {},
 ): Promise<ExtractTrackStemsResult> {
   const projectStore = useProjectStore.getState();
   const project = projectStore.project;
@@ -140,6 +154,12 @@ export async function extractTrackToNewTracks(
 
   useGenerationStore.getState().setIsGenerating(true);
   try {
+    options.onProgress?.({
+      phase: 'preparing',
+      completed: 0,
+      total: EXTRACT_TRACK_NAMES.length,
+      currentTrackName: null,
+    });
     const sourceMix = await buildTrackSourceMix(project, sourceTrack, sourceClipId);
     const result: ExtractTrackStemsResult = {
       createdTrackNames: [],
@@ -147,8 +167,22 @@ export async function extractTrackToNewTracks(
       failedTrackNames: [],
     };
     const engine = getAudioEngine();
+    let processedCount = 0;
+
+    options.onProgress?.({
+      phase: 'extracting',
+      completed: processedCount,
+      total: EXTRACT_TRACK_NAMES.length,
+      currentTrackName: null,
+    });
 
     for (const trackName of EXTRACT_TRACK_NAMES) {
+      options.onProgress?.({
+        phase: 'extracting',
+        completed: processedCount,
+        total: EXTRACT_TRACK_NAMES.length,
+        currentTrackName: trackName,
+      });
       try {
         const params = buildExtractParams(project, trackName, sourceMix.duration);
         const generated = await generateTask(sourceMix.blob, params);
@@ -184,9 +218,23 @@ export async function extractTrackToNewTracks(
           trackName,
           reason: error instanceof Error ? error.message : 'Unknown extraction error',
         });
+      } finally {
+        processedCount += 1;
+        options.onProgress?.({
+          phase: 'extracting',
+          completed: processedCount,
+          total: EXTRACT_TRACK_NAMES.length,
+          currentTrackName: trackName,
+        });
       }
     }
 
+    options.onProgress?.({
+      phase: 'done',
+      completed: EXTRACT_TRACK_NAMES.length,
+      total: EXTRACT_TRACK_NAMES.length,
+      currentTrackName: null,
+    });
     return result;
   } finally {
     useGenerationStore.getState().setIsGenerating(false);
