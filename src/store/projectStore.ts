@@ -9,6 +9,7 @@ import {
   DEFAULT_TIME_SIGNATURE,
   DEFAULT_PROJECT_NAME,
   DEFAULT_GENERATION,
+  DEFAULT_TRACK_VOLUME,
 } from '../constants/defaults';
 import { saveProject as saveProjectToIDB } from '../services/projectStorage';
 import { deleteAudioBlob, saveAudioBlob } from '../services/audioFileManager';
@@ -154,7 +155,7 @@ export const useProjectStore = create<ProjectState>()(
           displayName,
           color: info.color,
           order: maxOrder + 1,
-          volume: 0.8,
+          volume: DEFAULT_TRACK_VOLUME,
           muted: false,
           soloed: false,
           hidden: false,

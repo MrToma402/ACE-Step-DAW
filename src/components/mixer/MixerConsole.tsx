@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useProjectStore } from '../../store/projectStore';
 import { getAudioEngine } from '../../hooks/useAudioEngine';
+import { DEFAULT_TRACK_VOLUME } from '../../constants/defaults';
 
 interface MeterLevels {
     [trackId: string]: number;
@@ -71,6 +72,11 @@ export function MixerConsole() {
       .sort((a, b) => a.order - b.order);
     const masterPct = levelToPercent(masterLevel);
     const masterDb = volumeToDb(masterLevel > 0.001 ? masterLevel : 0);
+    const resetAllTrackVolumes = () => {
+        for (const track of project.tracks) {
+            updateTrack(track.id, { volume: DEFAULT_TRACK_VOLUME });
+        }
+    };
 
     return (
         <div className="h-full min-h-[160px] bg-daw-panel border-t border-daw-border flex flex-col shrink-0">
@@ -78,6 +84,13 @@ export function MixerConsole() {
             <div className="h-7 bg-daw-surface border-b border-daw-border flex items-center px-4">
                 <span className="text-[10px] uppercase font-bold text-slate-500 tracking-[0.2em]">Mixer Console</span>
                 <div className="ml-auto flex gap-4">
+                    <button
+                        type="button"
+                        onClick={resetAllTrackVolumes}
+                        className="px-2 h-5 rounded border border-daw-border bg-black/30 text-[9px] text-slate-300 uppercase font-bold tracking-[0.15em] hover:text-white hover:border-slate-500 transition-colors"
+                    >
+                        Reset All
+                    </button>
                     <span className="text-[9px] text-daw-accent uppercase font-bold tracking-[0.15em]">Faders</span>
                 </div>
             </div>

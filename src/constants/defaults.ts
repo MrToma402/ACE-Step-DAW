@@ -5,6 +5,7 @@ export const DEFAULT_KEY_SCALE = 'C major';
 export const DEFAULT_TIME_SIGNATURE = 4;
 export const DEFAULT_DURATION = 30;
 export const DEFAULT_PROJECT_NAME = 'Untitled Project';
+export const DEFAULT_TRACK_VOLUME = 0.8;
 
 export const DEFAULT_GENERATION: GenerationDefaults = {
   inferenceSteps: 50,
