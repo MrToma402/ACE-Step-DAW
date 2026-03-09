@@ -48,4 +48,5 @@ test('selecting a clip clears track selection for clip-focused editing', () => {
 test('shortcut defaults include play selected isolation on P', () => {
   const { shortcutBindings } = useUIStore.getState();
   assert.equal(shortcutBindings.playSelectedIsolation, 'KeyP');
+  assert.equal(shortcutBindings.playSelectedIsolationLoop, 'KeyR');
 });

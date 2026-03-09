@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef } from 'react';
-import { useTransportStore } from '../store/transportStore';
+import { useTransportStore, type PlaybackScope } from '../store/transportStore';
 import { useProjectStore } from '../store/projectStore';
 import { useArrangementStore } from '../store/arrangementStore';
 import { useUIStore } from '../store/uiStore';
@@ -8,10 +8,6 @@ import { loadAudioBlobByKey } from '../services/audioFileManager';
 import { isArrangementClipSelected } from '../features/arrangement/selection';
 import type { Project } from '../types/project';
 import type { ArrangementWorkspace } from '../types/arrangement';
-
-type PlaybackScope =
-  | { type: 'all' }
-  | { type: 'selection'; clipIds: Set<string> };
 
 function getReadyClipTokens(project: Project, workspace: ArrangementWorkspace | null): string[] {
   const tokens: string[] = [];
@@ -62,6 +58,7 @@ function removeStaleTrackNodes(project: Project | null): void {
 export function useTransport() {
   const isPlaying = useTransportStore((s) => s.isPlaying);
   const project = useProjectStore((s) => s.project);
+  const setPlaybackScope = useTransportStore((s) => s.setPlaybackScope);
   const isClipGestureActive = useUIStore((s) => s.isClipGestureActive);
   const workspace = useArrangementStore((s) =>
     project ? (s.workspacesByProjectId[project.id] ?? null) : null,
@@ -71,7 +68,6 @@ export function useTransport() {
   const rescheduleInFlightRef = useRef(false);
   const rescheduleQueuedRef = useRef(false);
   const decodedBufferCacheRef = useRef<Map<string, AudioBuffer>>(new Map());
-  const playbackScopeRef = useRef<PlaybackScope>({ type: 'all' });
 
   const scheduleScopePlayback = useCallback(async (scope: PlaybackScope, fromTime?: number): Promise<number> => {
     const engine = getAudioEngine();
@@ -92,11 +88,13 @@ export function useTransport() {
       clipDuration: number;
     }> = [];
 
+    const selectedClipIds = scope.type === 'selection' ? new Set(scope.clipIds) : null;
+
     for (const track of proj.tracks) {
       if (!track.hidden) {
         for (const clip of track.clips) {
-          if (scope.type === 'selection') {
-            if (!scope.clipIds.has(clip.id)) continue;
+          if (selectedClipIds) {
+            if (!selectedClipIds.has(clip.id)) continue;
           } else if (!isArrangementClipSelected(clip, workspace)) {
             continue;
           }
@@ -167,29 +165,33 @@ export function useTransport() {
 
   const play = useCallback(async (fromTime?: number) => {
     const scope: PlaybackScope = { type: 'all' };
-    playbackScopeRef.current = scope;
+    setPlaybackScope(scope);
     await scheduleScopePlayback(scope, fromTime);
-  }, [scheduleScopePlayback]);
+  }, [scheduleScopePlayback, setPlaybackScope]);
 
-  const playSelectedClipsInIsolation = useCallback(async (clipIds: readonly string[]) => {
+  const playSelectedClipsInIsolation = useCallback(async (clipIds: readonly string[], loop = false) => {
     if (clipIds.length === 0) return;
-    const scope: PlaybackScope = { type: 'selection', clipIds: new Set(clipIds) };
+    const scope: PlaybackScope = { type: 'selection', clipIds: Array.from(new Set(clipIds)), loop };
     const proj = useProjectStore.getState().project;
     if (!proj) return;
     let selectionStart = Number.POSITIVE_INFINITY;
     for (const track of proj.tracks) {
       for (const clip of track.clips) {
-        if (!scope.clipIds.has(clip.id)) continue;
+        if (!scope.clipIds.includes(clip.id)) continue;
         selectionStart = Math.min(selectionStart, clip.startTime);
       }
     }
     if (!Number.isFinite(selectionStart)) return;
-    playbackScopeRef.current = scope;
+    setPlaybackScope(scope);
     const scheduled = await scheduleScopePlayback(scope, selectionStart);
     if (scheduled === 0 && typeof window !== 'undefined') {
       window.alert('No selected clips have ready audio.');
     }
-  }, [scheduleScopePlayback]);
+  }, [scheduleScopePlayback, setPlaybackScope]);
+
+  const playSelectedClipsInIsolationLoop = useCallback(async (clipIds: readonly string[]) => {
+    await playSelectedClipsInIsolation(clipIds, true);
+  }, [playSelectedClipsInIsolation]);
 
   // Keep AudioEngine nodes in sync with project tracks so removed tracks cannot leave stale solo/mute state.
   useEffect(() => {
@@ -236,7 +238,7 @@ export function useTransport() {
     if (engine.playing) {
       engine.stop();
       useTransportStore.getState().seek(time);
-      void scheduleScopePlayback(playbackScopeRef.current, time);
+      void scheduleScopePlayback(useTransportStore.getState().playbackScope, time);
     } else {
       useTransportStore.getState().seek(time);
     }
@@ -246,7 +248,17 @@ export function useTransport() {
   useEffect(() => {
     const engine = getAudioEngine();
     engine.setOnEndedCallback(() => {
-      if (playbackScopeRef.current.type === 'selection') {
+      const currentScope = useTransportStore.getState().playbackScope;
+      if (currentScope.type === 'selection') {
+        if (currentScope.loop) {
+          const loopScope = currentScope;
+          void scheduleScopePlayback(loopScope).then((scheduled) => {
+            if (scheduled === 0) {
+              useTransportStore.getState().pause();
+            }
+          });
+          return;
+        }
         useTransportStore.getState().pause();
         return;
       }
@@ -261,10 +273,7 @@ export function useTransport() {
         useTransportStore.getState().stop();
       }
     });
-    return () => {
-      engine.setOnEndedCallback(() => {});
-    };
-  }, [play]);
+  }, [play, scheduleScopePlayback]);
 
   // Sync mute/solo/volume to audio engine TrackNodes during playback
   useEffect(() => {
@@ -341,14 +350,14 @@ export function useTransport() {
       if (!useTransportStore.getState().isPlaying) return;
       rescheduleInFlightRef.current = true;
       const resumeAt = useTransportStore.getState().currentTime;
-      void scheduleScopePlayback(playbackScopeRef.current, resumeAt).finally(() => {
+      void scheduleScopePlayback(useTransportStore.getState().playbackScope, resumeAt).finally(() => {
         rescheduleInFlightRef.current = false;
         if (rescheduleQueuedRef.current && useTransportStore.getState().isPlaying) {
           if (useUIStore.getState().isClipGestureActive) return;
           rescheduleQueuedRef.current = false;
           rescheduleInFlightRef.current = true;
           const queuedResumeAt = useTransportStore.getState().currentTime;
-          void scheduleScopePlayback(playbackScopeRef.current, queuedResumeAt).finally(() => {
+          void scheduleScopePlayback(useTransportStore.getState().playbackScope, queuedResumeAt).finally(() => {
             rescheduleInFlightRef.current = false;
           });
         }
@@ -363,5 +372,5 @@ export function useTransport() {
     };
   }, [project, workspace, isPlaying, isClipGestureActive, scheduleScopePlayback]);
 
-  return { isPlaying, play, playSelectedClipsInIsolation, pause, stop, seek };
+  return { isPlaying, play, playSelectedClipsInIsolation, playSelectedClipsInIsolationLoop, pause, stop, seek };
 }

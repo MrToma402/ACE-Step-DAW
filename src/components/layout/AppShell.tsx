@@ -72,7 +72,7 @@ export function AppShell() {
   const closeCoverDialog = useUIStore((s) => s.closeCoverDialog);
   const setShiftPressed = useUIStore((s) => s.setShiftPressed);
   const ensureProjectWorkspace = useArrangementStore((s) => s.ensureProjectWorkspace);
-  const { isPlaying, play, playSelectedClipsInIsolation, pause } = useTransport();
+  const { isPlaying, play, playSelectedClipsInIsolation, playSelectedClipsInIsolationLoop, pause } = useTransport();
   const { sidebarWidth, mixerHeight, startSidebarResize, startMixerResize } = useDawLayoutResize();
   const sidebarScrollRef = useRef<HTMLDivElement | null>(null);
   const timelineScrollRef = useRef<HTMLDivElement | null>(null);
@@ -224,6 +224,13 @@ export function AppShell() {
         return;
       }
 
+      if (e.code === shortcutBindings.playSelectedIsolationLoop) {
+        if (activeTab !== 'daw' || selectedClipIds.size === 0) return;
+        e.preventDefault();
+        void playSelectedClipsInIsolationLoop(Array.from(selectedClipIds));
+        return;
+      }
+
       if (e.code === shortcutBindings.mergeSelected) {
         if (activeTab !== 'daw' || selectedClipIds.size < 2) return;
         if (e.repeat) return;
@@ -268,6 +275,7 @@ export function AppShell() {
     pause,
     play,
     playSelectedClipsInIsolation,
+    playSelectedClipsInIsolationLoop,
     removeClip,
     removeTracks,
     duplicateClip,

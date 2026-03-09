@@ -37,9 +37,11 @@ export function Toolbar() {
   );
   const { isPlaying, play, pause, stop } = useTransport();
   const loopEnabled = useTransportStore((s) => s.loopEnabled);
+  const playbackScope = useTransportStore((s) => s.playbackScope);
   const toggleLoop = useTransportStore((s) => s.toggleLoop);
   const snapEnabled = arrangementWorkspace?.settings.snapEnabled ?? true;
   const snapResolution = arrangementWorkspace?.settings.snapResolution ?? '1_4';
+  const isSelectionLooping = isPlaying && playbackScope.type === 'selection' && playbackScope.loop;
 
   const tabs: { id: ActiveTab; label: string; icon: string }[] = [
     { id: 'composer', label: 'Composer', icon: 'auto_awesome' },
@@ -139,6 +141,14 @@ export function Toolbar() {
           >
             <span className="material-symbols-outlined text-lg">loop</span>
           </button>
+          {isSelectionLooping && (
+            <div
+              className="h-8 px-2 flex items-center rounded text-[10px] font-bold uppercase tracking-wider text-emerald-300 bg-emerald-500/10 border border-emerald-400/30"
+              title="Selected clips are repeating continuously"
+            >
+              Repeat On
+            </div>
+          )}
         </div>
 
         {/* Time / BPM Display */}
