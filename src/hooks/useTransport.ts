@@ -9,6 +9,10 @@ import { isArrangementClipSelected } from '../features/arrangement/selection';
 import type { Project } from '../types/project';
 import type { ArrangementWorkspace } from '../types/arrangement';
 
+type PlaybackScope =
+  | { type: 'all' }
+  | { type: 'selection'; clipIds: Set<string> };
+
 function getReadyClipTokens(project: Project, workspace: ArrangementWorkspace | null): string[] {
   const tokens: string[] = [];
 
@@ -67,13 +71,14 @@ export function useTransport() {
   const rescheduleInFlightRef = useRef(false);
   const rescheduleQueuedRef = useRef(false);
   const decodedBufferCacheRef = useRef<Map<string, AudioBuffer>>(new Map());
+  const playbackScopeRef = useRef<PlaybackScope>({ type: 'all' });
 
-  const play = useCallback(async (fromTime?: number) => {
+  const scheduleScopePlayback = useCallback(async (scope: PlaybackScope, fromTime?: number): Promise<number> => {
     const engine = getAudioEngine();
     await engine.resume();
 
     const proj = useProjectStore.getState().project;
-    if (!proj) return;
+    if (!proj) return 0;
     const workspace = useArrangementStore.getState().workspacesByProjectId[proj.id] ?? null;
     removeStaleTrackNodes(proj);
 
@@ -90,7 +95,11 @@ export function useTransport() {
     for (const track of proj.tracks) {
       if (!track.hidden) {
         for (const clip of track.clips) {
-          if (!isArrangementClipSelected(clip, workspace)) continue;
+          if (scope.type === 'selection') {
+            if (!scope.clipIds.has(clip.id)) continue;
+          } else if (!isArrangementClipSelected(clip, workspace)) {
+            continue;
+          }
           if (clip.generationStatus === 'ready' && clip.isolatedAudioKey) {
             let buffer = decodedBufferCacheRef.current.get(clip.isolatedAudioKey);
             if (!buffer) {
@@ -118,29 +127,69 @@ export function useTransport() {
       trackNode.soloed = !track.hidden && track.soloed;
     }
     engine.updateSoloState();
+    if (scope.type === 'selection' && clipBuffers.length === 0) {
+      return 0;
+    }
 
     const transportState = useTransportStore.getState();
-    const hasLoopRegion = transportState.loopEnd > transportState.loopStart;
     const startFrom = fromTime ?? transportState.currentTime;
-    const loopStart = hasLoopRegion ? transportState.loopStart : 0;
-    const loopEnd = hasLoopRegion ? transportState.loopEnd : proj.totalDuration;
-    const effectiveStart = transportState.loopEnabled && hasLoopRegion
-      ? Math.max(loopStart, Math.min(startFrom, loopEnd))
-      : startFrom;
-
-    // When looping, end at the last clip's endpoint instead of the full timeline
-    const { loopEnabled } = transportState;
+    let effectiveStart = startFrom;
     let effectiveEnd = proj.totalDuration;
-    if (loopEnabled && hasLoopRegion) {
-      effectiveEnd = loopEnd;
-    } else if (loopEnabled && clipBuffers.length > 0) {
-      const lastClipEnd = clipBuffers.reduce((max, cb) => Math.max(max, cb.startTime + cb.clipDuration), 0);
-      if (lastClipEnd > 0) effectiveEnd = lastClipEnd;
+
+    if (scope.type === 'selection') {
+      const selectionStart = clipBuffers.reduce((min, cb) => Math.min(min, cb.startTime), Number.POSITIVE_INFINITY);
+      const selectionEnd = clipBuffers.reduce((max, cb) => Math.max(max, cb.startTime + cb.clipDuration), 0);
+      effectiveStart = fromTime === undefined ? selectionStart : Math.max(0, Math.min(startFrom, selectionEnd));
+      effectiveEnd = selectionEnd;
+    } else {
+      const hasLoopRegion = transportState.loopEnd > transportState.loopStart;
+      const loopStart = hasLoopRegion ? transportState.loopStart : 0;
+      const loopEnd = hasLoopRegion ? transportState.loopEnd : proj.totalDuration;
+      effectiveStart = transportState.loopEnabled && hasLoopRegion
+        ? Math.max(loopStart, Math.min(startFrom, loopEnd))
+        : startFrom;
+
+      // When looping, end at the last clip's endpoint instead of the full timeline
+      const { loopEnabled } = transportState;
+      if (loopEnabled && hasLoopRegion) {
+        effectiveEnd = loopEnd;
+      } else if (loopEnabled && clipBuffers.length > 0) {
+        const lastClipEnd = clipBuffers.reduce((max, cb) => Math.max(max, cb.startTime + cb.clipDuration), 0);
+        if (lastClipEnd > 0) effectiveEnd = lastClipEnd;
+      }
     }
 
     engine.schedulePlayback(clipBuffers, effectiveStart, effectiveEnd);
+    useTransportStore.getState().setCurrentTime(effectiveStart);
     useTransportStore.getState().play();
+    return clipBuffers.length;
   }, []);
+
+  const play = useCallback(async (fromTime?: number) => {
+    const scope: PlaybackScope = { type: 'all' };
+    playbackScopeRef.current = scope;
+    await scheduleScopePlayback(scope, fromTime);
+  }, [scheduleScopePlayback]);
+
+  const playSelectedClipsInIsolation = useCallback(async (clipIds: readonly string[]) => {
+    if (clipIds.length === 0) return;
+    const scope: PlaybackScope = { type: 'selection', clipIds: new Set(clipIds) };
+    const proj = useProjectStore.getState().project;
+    if (!proj) return;
+    let selectionStart = Number.POSITIVE_INFINITY;
+    for (const track of proj.tracks) {
+      for (const clip of track.clips) {
+        if (!scope.clipIds.has(clip.id)) continue;
+        selectionStart = Math.min(selectionStart, clip.startTime);
+      }
+    }
+    if (!Number.isFinite(selectionStart)) return;
+    playbackScopeRef.current = scope;
+    const scheduled = await scheduleScopePlayback(scope, selectionStart);
+    if (scheduled === 0 && typeof window !== 'undefined') {
+      window.alert('No selected clips have ready audio.');
+    }
+  }, [scheduleScopePlayback]);
 
   // Keep AudioEngine nodes in sync with project tracks so removed tracks cannot leave stale solo/mute state.
   useEffect(() => {
@@ -187,16 +236,20 @@ export function useTransport() {
     if (engine.playing) {
       engine.stop();
       useTransportStore.getState().seek(time);
-      play(time);
+      void scheduleScopePlayback(playbackScopeRef.current, time);
     } else {
       useTransportStore.getState().seek(time);
     }
-  }, [play]);
+  }, [scheduleScopePlayback]);
 
   // Register the onEnded callback — respect loopEnabled
   useEffect(() => {
     const engine = getAudioEngine();
     engine.setOnEndedCallback(() => {
+      if (playbackScopeRef.current.type === 'selection') {
+        useTransportStore.getState().pause();
+        return;
+      }
       const { loopEnabled } = useTransportStore.getState();
       if (loopEnabled) {
         const state = useTransportStore.getState();
@@ -287,15 +340,15 @@ export function useTransport() {
       rescheduleTimerRef.current = null;
       if (!useTransportStore.getState().isPlaying) return;
       rescheduleInFlightRef.current = true;
-      // Do not stop immediately. Let current audio continue while we load/decode
-      // new ready clips, then play() will swap scheduling at current playhead.
-      void play().finally(() => {
+      const resumeAt = useTransportStore.getState().currentTime;
+      void scheduleScopePlayback(playbackScopeRef.current, resumeAt).finally(() => {
         rescheduleInFlightRef.current = false;
         if (rescheduleQueuedRef.current && useTransportStore.getState().isPlaying) {
           if (useUIStore.getState().isClipGestureActive) return;
           rescheduleQueuedRef.current = false;
           rescheduleInFlightRef.current = true;
-          void play().finally(() => {
+          const queuedResumeAt = useTransportStore.getState().currentTime;
+          void scheduleScopePlayback(playbackScopeRef.current, queuedResumeAt).finally(() => {
             rescheduleInFlightRef.current = false;
           });
         }
@@ -308,7 +361,7 @@ export function useTransport() {
         rescheduleTimerRef.current = null;
       }
     };
-  }, [project, workspace, isPlaying, isClipGestureActive, play]);
+  }, [project, workspace, isPlaying, isClipGestureActive, scheduleScopePlayback]);
 
-  return { isPlaying, play, pause, stop, seek };
+  return { isPlaying, play, playSelectedClipsInIsolation, pause, stop, seek };
 }

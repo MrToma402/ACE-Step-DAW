@@ -4,6 +4,7 @@ export type ActiveTab = 'daw' | 'composer' | 'analyze';
 
 export interface ShortcutBindings {
   playPause: string;
+  playSelectedIsolation: string;
   deleteSelected: string;
   mergeSelected: string;
 }
@@ -99,6 +100,7 @@ interface UIState {
 const ZOOM_LEVELS = [10, 25, 50, 100, 200, 500];
 const DEFAULT_SHORTCUT_BINDINGS: ShortcutBindings = {
   playPause: 'Space',
+  playSelectedIsolation: 'KeyP',
   deleteSelected: 'Backspace',
   mergeSelected: 'KeyM',
 };

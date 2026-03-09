@@ -44,3 +44,8 @@ test('selecting a clip clears track selection for clip-focused editing', () => {
   assert.deepEqual(Array.from(useUIStore.getState().selectedClipIds), ['clip-1']);
   assert.equal(useUIStore.getState().selectedTrackIds.size, 0);
 });
+
+test('shortcut defaults include play selected isolation on P', () => {
+  const { shortcutBindings } = useUIStore.getState();
+  assert.equal(shortcutBindings.playSelectedIsolation, 'KeyP');
+});

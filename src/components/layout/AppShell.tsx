@@ -72,7 +72,7 @@ export function AppShell() {
   const closeCoverDialog = useUIStore((s) => s.closeCoverDialog);
   const setShiftPressed = useUIStore((s) => s.setShiftPressed);
   const ensureProjectWorkspace = useArrangementStore((s) => s.ensureProjectWorkspace);
-  const { isPlaying, play, pause } = useTransport();
+  const { isPlaying, play, playSelectedClipsInIsolation, pause } = useTransport();
   const { sidebarWidth, mixerHeight, startSidebarResize, startMixerResize } = useDawLayoutResize();
   const sidebarScrollRef = useRef<HTMLDivElement | null>(null);
   const timelineScrollRef = useRef<HTMLDivElement | null>(null);
@@ -217,6 +217,13 @@ export function AppShell() {
         return;
       }
 
+      if (e.code === shortcutBindings.playSelectedIsolation) {
+        if (activeTab !== 'daw' || selectedClipIds.size === 0) return;
+        e.preventDefault();
+        void playSelectedClipsInIsolation(Array.from(selectedClipIds));
+        return;
+      }
+
       if (e.code === shortcutBindings.mergeSelected) {
         if (activeTab !== 'daw' || selectedClipIds.size < 2) return;
         if (e.repeat) return;
@@ -260,6 +267,7 @@ export function AppShell() {
     isPlaying,
     pause,
     play,
+    playSelectedClipsInIsolation,
     removeClip,
     removeTracks,
     duplicateClip,
@@ -295,6 +303,23 @@ export function AppShell() {
     setShowSettingsDialog,
     setShowNewProjectDialog,
   ]);
+
+  useEffect(() => {
+    const handlePlaySelectedIsolation = (event: Event) => {
+      if (activeTab !== 'daw') return;
+      const customEvent = event as CustomEvent<{ clipIds?: unknown }>;
+      const clipIds = customEvent.detail?.clipIds;
+      if (!Array.isArray(clipIds) || clipIds.length === 0) return;
+      void playSelectedClipsInIsolation(
+        clipIds.filter((clipId): clipId is string => typeof clipId === 'string'),
+      );
+    };
+
+    window.addEventListener('daw:play-selected-isolation', handlePlaySelectedIsolation as EventListener);
+    return () => {
+      window.removeEventListener('daw:play-selected-isolation', handlePlaySelectedIsolation as EventListener);
+    };
+  }, [activeTab, playSelectedClipsInIsolation]);
 
   const syncVerticalScroll = useCallback((
     source: 'sidebar' | 'timeline',

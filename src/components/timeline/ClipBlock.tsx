@@ -428,6 +428,16 @@ export function ClipBlock({ clip, track }: ClipBlockProps) {
     setEditingClip(null);
     openExtractDialog();
   }, [closeCtxMenu, openExtractDialog, setDraftClipId, setEditingClip]);
+  const handlePlayInIsolation = useCallback(() => {
+    closeCtxMenu();
+    const clipIds =
+      selectedClipIds.size > 0 && selectedClipIds.has(clip.id)
+        ? Array.from(selectedClipIds)
+        : [clip.id];
+    window.dispatchEvent(
+      new CustomEvent('daw:play-selected-isolation', { detail: { clipIds } }),
+    );
+  }, [clip.id, closeCtxMenu, selectedClipIds]);
 
   const handleMouseMoveLocal = useCallback((e: React.MouseEvent) => {
     if (isShiftPressed || e.shiftKey) {
@@ -728,6 +738,7 @@ export function ClipBlock({ clip, track }: ClipBlockProps) {
           y={ctxMenu.y}
           onEdit={() => { closeCtxMenu(); setDraftClipId(null); setEditingClip(clip.id); }}
           onGenerate={() => { closeCtxMenu(); generateClip(clip.id); }}
+          onPlayInIsolation={handlePlayInIsolation}
           onCover={() => { closeCtxMenu(); openCoverDialog({ clipId: clip.id, referenceClipId: clip.id }); }}
           onDuplicate={() => { closeCtxMenu(); duplicateClip(clip.id); }}
           onDuplicateToNewLayer={() => { closeCtxMenu(); handleDuplicateToNewLayer(); }}
@@ -763,6 +774,7 @@ function ClipContextMenu({
   y,
   onEdit,
   onGenerate,
+  onPlayInIsolation,
   onCover,
   onDuplicate,
   onDuplicateToNewLayer,
@@ -780,6 +792,7 @@ function ClipContextMenu({
   y: number;
   onEdit: () => void;
   onGenerate: () => void;
+  onPlayInIsolation: () => void;
   onCover: () => void;
   onDuplicate: () => void;
   onDuplicateToNewLayer: () => void;
@@ -814,6 +827,13 @@ function ClipContextMenu({
         >
           <span className="material-symbols-outlined text-xs">auto_awesome</span>
           Generate
+        </button>
+        <button
+          onClick={onPlayInIsolation}
+          className="w-full text-left px-3 py-1.5 text-xs text-slate-300 hover:bg-white/5 transition-colors flex items-center gap-2"
+        >
+          <span className="material-symbols-outlined text-xs">play_arrow</span>
+          Play In Isolation (P)
         </button>
         <button
           onClick={onCover}
