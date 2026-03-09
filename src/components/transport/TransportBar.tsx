@@ -1,5 +1,8 @@
 import { useTransport } from '../../hooks/useTransport';
 import { useTransportStore } from '../../store/transportStore';
+import { getSelectionLoopRange } from '../../features/transport/selectionLoopRange';
+import { useProjectStore } from '../../store/projectStore';
+import { formatTime } from '../../utils/time';
 import { TimeDisplay } from './TimeDisplay';
 import { TempoDisplay } from './TempoDisplay';
 
@@ -7,8 +10,10 @@ export function TransportBar() {
   const { isPlaying, play, pause, stop } = useTransport();
   const loopEnabled = useTransportStore((s) => s.loopEnabled);
   const playbackScope = useTransportStore((s) => s.playbackScope);
+  const project = useProjectStore((s) => s.project);
   const toggleLoop = useTransportStore((s) => s.toggleLoop);
-  const isSelectionLooping = isPlaying && playbackScope.type === 'selection' && playbackScope.loop;
+  const selectionLoopRange = getSelectionLoopRange(playbackScope, project);
+  const isSelectionLooping = isPlaying && selectionLoopRange !== null;
 
   return (
     <div className="flex items-center h-10 px-3 gap-3 bg-daw-surface border-b border-daw-border">
@@ -54,12 +59,16 @@ export function TransportBar() {
             <path d="M2 11h7a3 3 0 0 0 0-6" />
           </svg>
         </button>
-        {isSelectionLooping && (
+        {selectionLoopRange && (
           <div
-            className="h-8 px-2 flex items-center rounded text-[10px] font-bold uppercase tracking-wider text-emerald-300 bg-emerald-500/10 border border-emerald-400/30"
-            title="Selected clips are repeating continuously"
+            className={`h-8 px-2 flex items-center rounded text-[10px] font-bold uppercase tracking-wider border ${
+              isSelectionLooping
+                ? 'text-emerald-300 bg-emerald-500/10 border-emerald-400/30'
+                : 'text-emerald-200/80 bg-emerald-500/5 border-emerald-500/20'
+            }`}
+            title="Selected clips loop range"
           >
-            Repeat On
+            Loop {formatTime(selectionLoopRange.start)} - {formatTime(selectionLoopRange.end)}
           </div>
         )}
       </div>

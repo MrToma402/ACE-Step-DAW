@@ -3,6 +3,8 @@ import { useUIStore } from '../../store/uiStore';
 import { useTransport } from '../../hooks/useTransport';
 import { useTransportStore } from '../../store/transportStore';
 import { useArrangementStore } from '../../store/arrangementStore';
+import { getSelectionLoopRange } from '../../features/transport/selectionLoopRange';
+import { formatTime } from '../../utils/time';
 import { TimeDisplay } from '../transport/TimeDisplay';
 import { TempoDisplay } from '../transport/TempoDisplay';
 import { IconDropdownControl } from '../transport/IconDropdownControl';
@@ -41,7 +43,8 @@ export function Toolbar() {
   const toggleLoop = useTransportStore((s) => s.toggleLoop);
   const snapEnabled = arrangementWorkspace?.settings.snapEnabled ?? true;
   const snapResolution = arrangementWorkspace?.settings.snapResolution ?? '1_4';
-  const isSelectionLooping = isPlaying && playbackScope.type === 'selection' && playbackScope.loop;
+  const selectionLoopRange = getSelectionLoopRange(playbackScope, project);
+  const isSelectionLooping = isPlaying && selectionLoopRange !== null;
 
   const tabs: { id: ActiveTab; label: string; icon: string }[] = [
     { id: 'composer', label: 'Composer', icon: 'auto_awesome' },
@@ -141,12 +144,16 @@ export function Toolbar() {
           >
             <span className="material-symbols-outlined text-lg">loop</span>
           </button>
-          {isSelectionLooping && (
+          {selectionLoopRange && (
             <div
-              className="h-8 px-2 flex items-center rounded text-[10px] font-bold uppercase tracking-wider text-emerald-300 bg-emerald-500/10 border border-emerald-400/30"
-              title="Selected clips are repeating continuously"
+              className={`h-8 px-2 flex items-center rounded text-[10px] font-bold uppercase tracking-wider border ${
+                isSelectionLooping
+                  ? 'text-emerald-300 bg-emerald-500/10 border-emerald-400/30'
+                  : 'text-emerald-200/80 bg-emerald-500/5 border-emerald-500/20'
+              }`}
+              title="Selected clips loop range"
             >
-              Repeat On
+              Loop {formatTime(selectionLoopRange.start)} - {formatTime(selectionLoopRange.end)}
             </div>
           )}
         </div>

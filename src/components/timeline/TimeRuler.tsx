@@ -5,6 +5,7 @@ import { useArrangementStore } from '../../store/arrangementStore';
 import { useTransportStore } from '../../store/transportStore';
 import { useTransport } from '../../hooks/useTransport';
 import { getBarDuration } from '../../utils/time';
+import { getSelectionLoopRange } from '../../features/transport/selectionLoopRange';
 
 interface RulerMarker {
   key: string;
@@ -109,6 +110,7 @@ function buildBarBeatMarkers(
 export function TimeRuler() {
   const project = useProjectStore((s) => s.project);
   const pixelsPerSecond = useUIStore((s) => s.pixelsPerSecond);
+  const playbackScope = useTransportStore((s) => s.playbackScope);
   const workspace = useArrangementStore((s) =>
     project ? s.workspacesByProjectId[project.id] : undefined,
   );
@@ -154,6 +156,16 @@ export function TimeRuler() {
       ? buildSecondMarkers(totalDuration, pixelsPerSecond)
       : buildBarBeatMarkers(totalDuration, project.bpm, project.timeSignature, pixelsPerSecond)
   ), [displayMode, totalDuration, pixelsPerSecond, project.bpm, project.timeSignature]);
+  const selectionLoopRange = getSelectionLoopRange(playbackScope, project);
+  const selectionLoopRangePx = useMemo(() => {
+    if (!selectionLoopRange) return null;
+    const startPx = Math.max(0, Math.min(selectionLoopRange.start * pixelsPerSecond, totalWidth));
+    const endPx = Math.max(startPx, Math.min(selectionLoopRange.end * pixelsPerSecond, totalWidth));
+    return {
+      left: startPx,
+      width: Math.max(2, endPx - startPx),
+    };
+  }, [pixelsPerSecond, selectionLoopRange, totalWidth]);
 
   return (
     <div
@@ -162,6 +174,20 @@ export function TimeRuler() {
       style={{ width: totalWidth }}
       onClick={handleClick}
     >
+      {selectionLoopRangePx && (
+        <div
+          className="absolute top-0 h-full bg-emerald-400/10 border-x border-emerald-300/60 pointer-events-none z-10"
+          style={{
+            left: selectionLoopRangePx.left,
+            width: selectionLoopRangePx.width,
+          }}
+        >
+          <div className="absolute top-0 left-0 right-0 h-[2px] bg-emerald-300/80" />
+          <div className="absolute top-[2px] left-1 text-[8px] font-bold uppercase tracking-wider text-emerald-200/90">
+            Loop
+          </div>
+        </div>
+      )}
       <RulerMarkersLayer markers={markers} />
       <RulerPlayhead
         totalWidth={totalWidth}
