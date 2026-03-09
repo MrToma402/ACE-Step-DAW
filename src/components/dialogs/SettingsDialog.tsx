@@ -4,6 +4,32 @@ import { useProjectStore } from '../../store/projectStore';
 import { listModels } from '../../services/aceStepApi';
 import type { ModelEntry } from '../../types/api';
 
+const DEFAULT_SETTINGS_VALUES = {
+  inferenceSteps: 50,
+  guidanceScale: 7.0,
+  shift: 3.0,
+  thinking: true,
+  model: '',
+} as const;
+
+function normalizeModels(models: unknown): ModelEntry[] {
+  if (!Array.isArray(models)) return [];
+  return models
+    .map((entry) => {
+      if (typeof entry === 'string') {
+        return { name: entry, is_default: false } satisfies ModelEntry;
+      }
+      if (!entry || typeof entry !== 'object') return null;
+      const candidate = entry as Partial<ModelEntry>;
+      if (!candidate.name || typeof candidate.name !== 'string') return null;
+      return {
+        name: candidate.name,
+        is_default: Boolean(candidate.is_default),
+      } satisfies ModelEntry;
+    })
+    .filter((entry): entry is ModelEntry => entry !== null);
+}
+
 export function SettingsDialog() {
   const show = useUIStore((s) => s.showSettingsDialog);
   const setShow = useUIStore((s) => s.setShowSettingsDialog);
@@ -21,19 +47,20 @@ export function SettingsDialog() {
   // Only sync form state when dialog opens, not on every project mutation
   useEffect(() => {
     if (show && project) {
-      setSteps(project.generationDefaults.inferenceSteps);
-      setGuidance(project.generationDefaults.guidanceScale);
-      setShift(project.generationDefaults.shift);
-      setThinking(project.generationDefaults.thinking);
-      setModel(project.generationDefaults.model);
+      const defaults = project.generationDefaults ?? DEFAULT_SETTINGS_VALUES;
+      setSteps(defaults.inferenceSteps ?? DEFAULT_SETTINGS_VALUES.inferenceSteps);
+      setGuidance(defaults.guidanceScale ?? DEFAULT_SETTINGS_VALUES.guidanceScale);
+      setShift(defaults.shift ?? DEFAULT_SETTINGS_VALUES.shift);
+      setThinking(defaults.thinking ?? DEFAULT_SETTINGS_VALUES.thinking);
+      setModel(defaults.model ?? DEFAULT_SETTINGS_VALUES.model);
     }
-  }, [show]);
+  }, [show, project]);
 
   useEffect(() => {
     if (!show) return;
     setModelsLoading(true);
     listModels()
-      .then((resp) => setAvailableModels(resp.models))
+      .then((resp) => setAvailableModels(normalizeModels(resp?.models)))
       .catch(() => setAvailableModels([]))
       .finally(() => setModelsLoading(false));
   }, [show]);
@@ -48,7 +75,7 @@ export function SettingsDialog() {
           ...store.project,
           updatedAt: Date.now(),
           generationDefaults: {
-            ...store.project.generationDefaults,
+            ...(store.project.generationDefaults ?? DEFAULT_SETTINGS_VALUES),
             inferenceSteps: steps,
             guidanceScale: guidance,
             shift,
@@ -62,7 +89,7 @@ export function SettingsDialog() {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60">
       <div className="w-[400px] bg-daw-surface rounded-lg border border-daw-border shadow-2xl">
         <div className="flex items-center justify-between px-4 py-3 border-b border-daw-border">
           <h2 className="text-sm font-medium">Settings</h2>
