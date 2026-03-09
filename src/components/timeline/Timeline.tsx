@@ -1,4 +1,4 @@
-import { useRef, useCallback, type MutableRefObject, type UIEvent } from 'react';
+import { useRef, useState, useCallback, type MutableRefObject, type UIEvent } from 'react';
 import { useProjectStore } from '../../store/projectStore';
 import { useUIStore } from '../../store/uiStore';
 import { TimeRuler } from './TimeRuler';
@@ -18,6 +18,8 @@ export function Timeline({ scrollBodyRef, onVerticalScroll }: TimelineProps) {
   const setPixelsPerSecond = useUIStore((s) => s.setPixelsPerSecond);
   const isImportingAudio = useUIStore((s) => s.isImportingAudio);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const lanesBodyRef = useRef<HTMLDivElement>(null);
+  const [marqueeRect, setMarqueeRect] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
 
   const sortedTracks = project
     ? [...project.tracks].sort((a, b) => a.order - b.order)
@@ -49,7 +51,75 @@ export function Timeline({ scrollBodyRef, onVerticalScroll }: TimelineProps) {
   const handleVerticalScroll = useCallback((event: UIEvent<HTMLDivElement>) => {
     onVerticalScroll?.(event.currentTarget.scrollTop);
   }, [onVerticalScroll]);
-
+  const collectTrackIdsInVerticalRange = useCallback((startClientY: number, endClientY: number): string[] => {
+    const container = scrollRef.current;
+    if (!container) return [];
+    const minY = Math.min(startClientY, endClientY);
+    const maxY = Math.max(startClientY, endClientY);
+    const nodes = container.querySelectorAll<HTMLElement>('[data-track-lane-id]');
+    const selected: string[] = [];
+    nodes.forEach((node) => {
+      const trackId = node.dataset.trackLaneId;
+      if (!trackId) return;
+      const rect = node.getBoundingClientRect();
+      if (rect.bottom < minY || rect.top > maxY) return;
+      selected.push(trackId);
+    });
+    return selected;
+  }, []);
+  const selectClipsInRect = useCallback((
+    startClientY: number,
+    currentClientY: number,
+    startX: number,
+    endX: number,
+    scrollX: number,
+    additive: boolean,
+    baseSelectedClipIds: Set<string>,
+  ): { selectedClipCount: number; selectedTrackCount: number } => {
+    if (!project) return { selectedClipCount: 0, selectedTrackCount: 0 };
+    const targetTrackIds = new Set(collectTrackIdsInVerticalRange(startClientY, currentClientY));
+    const rangeStart = (Math.min(startX, endX) + scrollX) / pixelsPerSecond;
+    const rangeEnd = (Math.max(startX, endX) + scrollX) / pixelsPerSecond;
+    const clipIds: string[] = [];
+    for (const track of project.tracks) {
+      if (!targetTrackIds.has(track.id)) continue;
+      for (const clip of track.clips) {
+        if (clip.startTime < rangeEnd && (clip.startTime + clip.duration) > rangeStart) {
+          clipIds.push(clip.id);
+        }
+      }
+    }
+    const nextSelected = additive
+      ? new Set([...baseSelectedClipIds, ...clipIds])
+      : new Set(clipIds);
+    useUIStore.setState({
+      selectedClipIds: nextSelected,
+      selectedTrackIds: new Set(),
+    });
+    return { selectedClipCount: clipIds.length, selectedTrackCount: targetTrackIds.size };
+  }, [collectTrackIdsInVerticalRange, pixelsPerSecond, project]);
+  const updateMarqueeVisual = useCallback((
+    startClientY: number,
+    currentClientY: number,
+    startX: number,
+    endX: number,
+  ) => {
+    const lanesBody = lanesBodyRef.current;
+    if (!lanesBody) return;
+    const rect = lanesBody.getBoundingClientRect();
+    const clampY = (value: number) => Math.max(0, Math.min(value, rect.height));
+    const y1 = clampY(startClientY - rect.top);
+    const y2 = clampY(currentClientY - rect.top);
+    setMarqueeRect({
+      left: Math.min(startX, endX),
+      top: Math.min(y1, y2),
+      width: Math.max(1, Math.abs(endX - startX)),
+      height: Math.max(1, Math.abs(y2 - y1)),
+    });
+  }, []);
+  const clearMarqueeVisual = useCallback(() => {
+    setMarqueeRect(null);
+  }, []);
   if (!project) {
     return (
       <div className="flex-1 flex items-center justify-center text-zinc-600 text-sm">
@@ -73,12 +143,29 @@ export function Timeline({ scrollBodyRef, onVerticalScroll }: TimelineProps) {
             <SectionTimelineStrip />
           </div>
 
-          <div className="relative">
+          <div className="relative" ref={lanesBodyRef}>
             <GridOverlay />
             <Playhead />
+            {marqueeRect && (
+              <div
+                className="absolute pointer-events-none z-30 bg-daw-accent/15 border border-daw-accent/70 rounded-[2px]"
+                style={{
+                  left: marqueeRect.left,
+                  top: marqueeRect.top,
+                  width: marqueeRect.width,
+                  height: marqueeRect.height,
+                }}
+              />
+            )}
 
             {sortedTracks.map((track) => (
-              <TrackLane key={track.id} track={track} />
+              <TrackLane
+                key={track.id}
+                track={track}
+                onSelectClipsInRect={selectClipsInRect}
+                onMarqueeVisualChange={updateMarqueeVisual}
+                onMarqueeVisualEnd={clearMarqueeVisual}
+              />
             ))}
 
             {sortedTracks.length === 0 && (

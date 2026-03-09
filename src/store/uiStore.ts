@@ -44,6 +44,7 @@ interface UIState {
   scrollY: number;
   isImportingAudio: boolean;
   selectedClipIds: Set<string>;
+  selectedTrackIds: Set<string>;
   editingClipId: string | null;
   showNewProjectDialog: boolean;
   showInstrumentPicker: boolean;
@@ -69,6 +70,9 @@ interface UIState {
   setScrollY: (y: number) => void;
   setIsImportingAudio: (v: boolean) => void;
   selectClip: (clipId: string, multi?: boolean) => void;
+  selectTrack: (trackId: string, multi?: boolean) => void;
+  setSelectedTracks: (trackIds: Iterable<string>) => void;
+  clearSelectedTracks: () => void;
   deselectAll: () => void;
   setEditingClip: (clipId: string | null) => void;
   setShowNewProjectDialog: (v: boolean) => void;
@@ -106,6 +110,7 @@ export const useUIStore = create<UIState>((set) => ({
   scrollY: 0,
   isImportingAudio: false,
   selectedClipIds: new Set(),
+  selectedTrackIds: new Set(),
   editingClipId: null,
   showNewProjectDialog: false,
   showInstrumentPicker: false,
@@ -150,10 +155,24 @@ export const useUIStore = create<UIState>((set) => ({
         const next = new Set(s.selectedClipIds);
         if (next.has(clipId)) next.delete(clipId);
         else next.add(clipId);
-        return { selectedClipIds: next };
+        return { selectedClipIds: next, selectedTrackIds: new Set() };
       }
-      return { selectedClipIds: new Set([clipId]) };
+      return { selectedClipIds: new Set([clipId]), selectedTrackIds: new Set() };
     }),
+
+  selectTrack: (trackId, multi) =>
+    set((s) => {
+      if (multi) {
+        const next = new Set(s.selectedTrackIds);
+        if (next.has(trackId)) next.delete(trackId);
+        else next.add(trackId);
+        return { selectedTrackIds: next };
+      }
+      return { selectedTrackIds: new Set([trackId]) };
+    }),
+
+  setSelectedTracks: (trackIds) => set({ selectedTrackIds: new Set(trackIds) }),
+  clearSelectedTracks: () => set({ selectedTrackIds: new Set() }),
 
   deselectAll: () => set({ selectedClipIds: new Set() }),
 

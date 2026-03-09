@@ -26,11 +26,13 @@ import { useArrangementStore } from '../../store/arrangementStore';
 import { useDawLayoutResize } from '../../hooks/useDawLayoutResize';
 import { resolveDuplicateShortcutAction } from '../../features/timeline/duplicateShortcut';
 import { isDisposableDraftClip } from '../../features/generation/draftClipCleanup';
+import { resolveDeleteSelectionTarget } from '../../features/selection/deleteSelectionTarget';
 
 export function AppShell() {
   const { resumeOnGesture } = useAudioEngine();
   const project = useProjectStore((s) => s.project);
   const removeClip = useProjectStore((s) => s.removeClip);
+  const removeTracks = useProjectStore((s) => s.removeTracks);
   const duplicateClip = useProjectStore((s) => s.duplicateClip);
   const mergeClips = useProjectStore((s) => s.mergeClips);
   const addTrack = useProjectStore((s) => s.addTrack);
@@ -51,8 +53,11 @@ export function AppShell() {
   const repaintRequest = useUIStore((s) => s.repaintRequest);
   const coverRequest = useUIStore((s) => s.coverRequest);
   const selectedClipIds = useUIStore((s) => s.selectedClipIds);
+  const selectedTrackIds = useUIStore((s) => s.selectedTrackIds);
   const selectClip = useUIStore((s) => s.selectClip);
   const deselectAll = useUIStore((s) => s.deselectAll);
+  const clearSelectedTracks = useUIStore((s) => s.clearSelectedTracks);
+  const setSelectedTracks = useUIStore((s) => s.setSelectedTracks);
   const shortcutBindings = useUIStore((s) => s.shortcutBindings);
   const setShowNewProjectDialog = useUIStore((s) => s.setShowNewProjectDialog);
   const setShowInstrumentPicker = useUIStore((s) => s.setShowInstrumentPicker);
@@ -87,6 +92,14 @@ export function AppShell() {
     if (!project) return;
     ensureProjectWorkspace(project.id, project.totalDuration);
   }, [project?.id, project?.totalDuration, ensureProjectWorkspace]);
+
+  useEffect(() => {
+    if (!project || selectedTrackIds.size === 0) return;
+    const validTrackIds = new Set(project.tracks.map((track) => track.id));
+    const nextSelected = Array.from(selectedTrackIds).filter((trackId) => validTrackIds.has(trackId));
+    if (nextSelected.length === selectedTrackIds.size) return;
+    setSelectedTracks(nextSelected);
+  }, [project, selectedTrackIds, setSelectedTracks]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -223,9 +236,16 @@ export function AppShell() {
       }
 
       if (e.code === shortcutBindings.deleteSelected) {
-        if (activeTab !== 'daw' || selectedClipIds.size === 0) return;
+        if (activeTab !== 'daw') return;
+        const deleteTarget = resolveDeleteSelectionTarget(selectedTrackIds.size, selectedClipIds.size);
+        if (deleteTarget === 'none') return;
         e.preventDefault();
-        for (const clipId of selectedClipIds) {
+        if (deleteTarget === 'tracks') {
+          removeTracks(Array.from(selectedTrackIds));
+          clearSelectedTracks();
+          return;
+        }
+        for (const clipId of Array.from(selectedClipIds)) {
           removeClip(clipId);
         }
         deselectAll();
@@ -236,10 +256,12 @@ export function AppShell() {
   }, [
     activeTab,
     deselectAll,
+    clearSelectedTracks,
     isPlaying,
     pause,
     play,
     removeClip,
+    removeTracks,
     duplicateClip,
     mergeClips,
     addTrack,
@@ -247,6 +269,7 @@ export function AppShell() {
     getClipById,
     getTrackForClip,
     selectedClipIds,
+    selectedTrackIds,
     selectClip,
     showKeyboardShortcutsDialog,
     showNewProjectDialog,

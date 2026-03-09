@@ -21,8 +21,11 @@ import { extractTrackToNewTracks } from '../../services/stemExtractionPipeline';
 
 interface TrackHeaderProps {
   track: Track;
+  isSelected?: boolean;
   isDragging?: boolean;
   isDropTarget?: boolean;
+  onSelectTrack?: (trackId: string, multi: boolean) => void;
+  onStartTrackLasso?: (startClientY: number, additive: boolean) => void;
   onDragStartTrack?: (trackId: string) => void;
   onDragOverTrack?: (trackId: string) => void;
   onDropTrack?: (trackId: string) => void;
@@ -31,8 +34,11 @@ interface TrackHeaderProps {
 
 export function TrackHeader({
   track,
+  isSelected = false,
   isDragging = false,
   isDropTarget = false,
+  onSelectTrack,
+  onStartTrackLasso,
   onDragStartTrack,
   onDragOverTrack,
   onDropTrack,
@@ -48,6 +54,7 @@ export function TrackHeader({
   const { importAudioToTrack } = useAudioImport();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const suppressDragRef = useRef(false);
+  const lassoStartedRef = useRef(false);
   const [isDownloading, setIsDownloading] = useState(false);
   const [isExtracting, setIsExtracting] = useState(false);
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
@@ -107,20 +114,28 @@ export function TrackHeader({
     }
   };
 
-  const handlePointerDownCapture = (event: ReactPointerEvent<HTMLDivElement>) => {
-    let node = event.target as HTMLElement | null;
-    suppressDragRef.current = false;
-    while (node && node !== event.currentTarget) {
+  const isInteractiveTarget = (
+    target: EventTarget | null,
+    currentTarget: HTMLDivElement,
+  ): boolean => {
+    let node = target as HTMLElement | null;
+    while (node && node !== currentTarget) {
       if (shouldBlockTrackDragForTagName(node.tagName) || node.dataset.noTrackDrag === 'true') {
-        suppressDragRef.current = true;
-        return;
+        return true;
       }
       node = node.parentElement;
     }
+    return false;
+  };
+
+  const handlePointerDownCapture = (event: ReactPointerEvent<HTMLDivElement>) => {
+    lassoStartedRef.current = false;
+    suppressDragRef.current = isInteractiveTarget(event.target, event.currentTarget);
   };
 
   const clearDragSuppression = () => {
     suppressDragRef.current = false;
+    lassoStartedRef.current = false;
   };
 
   const handleDragStart = (event: DragEvent<HTMLDivElement>) => {
@@ -129,13 +144,9 @@ export function TrackHeader({
       return;
     }
 
-    let node = event.target as HTMLElement | null;
-    while (node && node !== event.currentTarget) {
-      if (shouldBlockTrackDragForTagName(node.tagName) || node.dataset.noTrackDrag === 'true') {
-        event.preventDefault();
-        return;
-      }
-      node = node.parentElement;
+    if (isInteractiveTarget(event.target, event.currentTarget)) {
+      event.preventDefault();
+      return;
     }
 
     event.dataTransfer.effectAllowed = 'move';
@@ -160,6 +171,23 @@ export function TrackHeader({
     event.preventDefault();
     event.stopPropagation();
     setCtxMenu({ x: event.clientX, y: event.clientY });
+  };
+
+  const handleMouseDown = (event: ReactMouseEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return;
+    if (isInteractiveTarget(event.target, event.currentTarget)) return;
+    if ((event.ctrlKey || event.metaKey) && onStartTrackLasso) {
+      suppressDragRef.current = true;
+      lassoStartedRef.current = true;
+      onStartTrackLasso(event.clientY, true);
+      event.preventDefault();
+    }
+  };
+
+  const handleClick = (event: ReactMouseEvent<HTMLDivElement>) => {
+    if (lassoStartedRef.current) return;
+    if (isInteractiveTarget(event.target, event.currentTarget)) return;
+    onSelectTrack?.(track.id, event.ctrlKey || event.metaKey);
   };
 
   const handleExtractToTracks = async () => {
@@ -191,10 +219,13 @@ export function TrackHeader({
   return (
     <>
       <div
+        data-track-header-id={track.id}
         draggable
         onDragStart={handleDragStart}
         onDragOver={handleDragOver}
         onDrop={handleDrop}
+        onMouseDown={handleMouseDown}
+        onClick={handleClick}
         onPointerDownCapture={handlePointerDownCapture}
         onPointerUpCapture={clearDragSuppression}
         onPointerCancel={clearDragSuppression}
@@ -205,6 +236,8 @@ export function TrackHeader({
             ? 'bg-daw-panel-light opacity-70'
             : isDropTarget
               ? 'bg-daw-accent/10 ring-1 ring-inset ring-daw-accent/50'
+              : isSelected
+                ? 'bg-daw-accent/10 ring-1 ring-inset ring-daw-accent/40'
               : 'bg-daw-panel hover:bg-daw-panel-light'
         } ${track.hidden ? 'opacity-60' : ''}`}
       >

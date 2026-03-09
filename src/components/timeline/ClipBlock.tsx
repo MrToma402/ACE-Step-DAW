@@ -10,6 +10,7 @@ import { snapTime } from '../../features/arrangement/snap';
 import { isArrangementClipSelected } from '../../features/arrangement/selection';
 import { estimateEtaSeconds, extractProgressPercent } from '../../features/generation/trackGenerationStatus';
 import { normalizeSeconds } from '../../utils/time';
+import { clampGroupMoveDelta } from '../../features/timeline/clipGroupMove';
 import { extractTrackToNewTracks } from '../../services/stemExtractionPipeline';
 
 interface ClipBlockProps {
@@ -27,6 +28,7 @@ export function ClipBlock({ clip, track }: ClipBlockProps) {
   const pixelsPerSecond = useUIStore((s) => s.pixelsPerSecond);
   const selectedClipIds = useUIStore((s) => s.selectedClipIds);
   const selectClip = useUIStore((s) => s.selectClip);
+  const deselectAll = useUIStore((s) => s.deselectAll);
   const setEditingClip = useUIStore((s) => s.setEditingClip);
   const setDraftClipId = useUIStore((s) => s.setDraftClipId);
   const clipDragPreview = useUIStore((s) => s.clipDragPreview);
@@ -173,6 +175,22 @@ export function ClipBlock({ clip, track }: ClipBlockProps) {
     let lastPreviewTrack = '';
     const bpm = project?.bpm ?? 120;
     const totalDuration = project?.totalDuration ?? 600;
+    if (mode === 'move' && !isSelected) {
+      selectClip(clip.id, false);
+    }
+    const groupDragClipIds =
+      mode === 'move' && isSelected && selectedClipIds.size > 1
+        ? Array.from(selectedClipIds)
+        : [clip.id];
+    const groupDragClips = groupDragClipIds
+      .map((clipId) => getClipById(clipId))
+      .filter((candidate): candidate is Clip => Boolean(candidate))
+      .map((candidate) => ({
+        id: candidate.id,
+        startTime: candidate.startTime,
+        duration: candidate.duration,
+      }));
+    const isGroupMove = mode === 'move' && groupDragClips.length > 1;
     dragRef.current = false;
     setClipGestureActive(true);
 
@@ -196,21 +214,39 @@ export function ClipBlock({ clip, track }: ClipBlockProps) {
         let newStart = snapTime(origStart + deltaSec, bpm, snapEnabled, snapResolution);
         newStart = Math.max(0, Math.min(newStart, totalDuration - origDuration));
         latestStart = newStart;
-        const hoverTrackId = findDropTargetTrackId(ev.clientX, ev.clientY) ?? track.id;
-        latestHoverTrackId = hoverTrackId;
-        if (hoverTrackId !== lastPreviewTrack || Math.abs(newStart - lastPreviewStart) > 0.001) {
-          setClipDragPreview({
-            clipId: clip.id,
-            sourceTrackId: track.id,
-            hoverTrackId,
-            startTime: newStart,
-            duration: clip.duration,
-            color: track.color,
-          });
-          lastPreviewTrack = hoverTrackId;
-          lastPreviewStart = newStart;
+        if (isGroupMove) {
+          const delta = clampGroupMoveDelta(groupDragClips, newStart - origStart, totalDuration);
+          for (const groupClip of groupDragClips) {
+            updateClip(groupClip.id, { startTime: groupClip.startTime + delta });
+          }
+          if (Math.abs(delta - lastPreviewStart) > 0.001) {
+            setClipDragPreview({
+              clipId: clip.id,
+              sourceTrackId: track.id,
+              hoverTrackId: track.id,
+              startTime: origStart + delta,
+              duration: clip.duration,
+              color: track.color,
+            });
+            lastPreviewStart = delta;
+          }
+        } else {
+          const hoverTrackId = findDropTargetTrackId(ev.clientX, ev.clientY) ?? track.id;
+          latestHoverTrackId = hoverTrackId;
+          if (hoverTrackId !== lastPreviewTrack || Math.abs(newStart - lastPreviewStart) > 0.001) {
+            setClipDragPreview({
+              clipId: clip.id,
+              sourceTrackId: track.id,
+              hoverTrackId,
+              startTime: newStart,
+              duration: clip.duration,
+              color: track.color,
+            });
+            lastPreviewTrack = hoverTrackId;
+            lastPreviewStart = newStart;
+          }
+          updateClip(clip.id, { startTime: newStart });
         }
-        updateClip(clip.id, { startTime: newStart });
       } else if (mode === 'resize-left') {
         let newStart = snapTime(origStart + deltaSec, bpm, snapEnabled, snapResolution);
         newStart = Math.max(0, newStart);
@@ -251,7 +287,7 @@ export function ClipBlock({ clip, track }: ClipBlockProps) {
       window.removeEventListener('blur', onMouseUp);
       setClipGestureActive(false);
       if (mode === 'move' && dragRef.current) {
-        if (latestHoverTrackId !== track.id) {
+        if (!isGroupMove && latestHoverTrackId !== track.id) {
           moveClipToTrack(clip.id, latestHoverTrackId, { startTime: latestStart });
         }
       }
@@ -295,8 +331,11 @@ export function ClipBlock({ clip, track }: ClipBlockProps) {
     clip.timeSignature,
     clip.sampleMode,
     clip.autoExpandPrompt,
+    isSelected,
     pixelsPerSecond,
     project,
+    selectedClipIds,
+    selectClip,
     snapEnabled,
     snapResolution,
     updateClip,
@@ -307,6 +346,7 @@ export function ClipBlock({ clip, track }: ClipBlockProps) {
     isShiftPressed,
     openRepaintDialog,
     flushRepaintSelectionFrame,
+    getClipById,
     track.id,
     track.color,
     getDragMode,
@@ -333,6 +373,16 @@ export function ClipBlock({ clip, track }: ClipBlockProps) {
 
   const closeCtxMenu = useCallback(() => setCtxMenu(null), []);
   const canMergeSelected = selectedClipIds.size >= 2 && selectedClipIds.has(clip.id);
+  const canDeleteSelected = selectedClipIds.size >= 2 && selectedClipIds.has(clip.id);
+  const deleteLabel = canDeleteSelected ? `Delete Selected (${selectedClipIds.size})` : 'Delete';
+  const handleDelete = useCallback(() => {
+    closeCtxMenu();
+    const ids = canDeleteSelected ? Array.from(selectedClipIds) : [clip.id];
+    for (const clipId of ids) {
+      removeClip(clipId);
+    }
+    deselectAll();
+  }, [canDeleteSelected, clip.id, closeCtxMenu, deselectAll, removeClip, selectedClipIds]);
   const handleMergeSelected = useCallback(() => {
     if (!canMergeSelected) return;
     closeCtxMenu();
@@ -691,7 +741,8 @@ export function ClipBlock({ clip, track }: ClipBlockProps) {
           canExtractToTracks={!isExtracting && !isGenerating}
           onMergeSelected={handleMergeSelected}
           canMergeSelected={canMergeSelected}
-          onDelete={() => { closeCtxMenu(); removeClip(clip.id); }}
+          onDelete={handleDelete}
+          deleteLabel={deleteLabel}
           onClose={closeCtxMenu}
           hasPrompt={!!clip.prompt}
           hasReferenceAudio={!!clip.isolatedAudioKey}
@@ -714,6 +765,7 @@ function ClipContextMenu({
   onMergeSelected,
   canMergeSelected,
   onDelete,
+  deleteLabel,
   onClose,
   hasPrompt,
   hasReferenceAudio,
@@ -730,6 +782,7 @@ function ClipContextMenu({
   onMergeSelected: () => void;
   canMergeSelected: boolean;
   onDelete: () => void;
+  deleteLabel: string;
   onClose: () => void;
   hasPrompt: boolean;
   hasReferenceAudio: boolean;
@@ -801,7 +854,7 @@ function ClipContextMenu({
           className="w-full text-left px-3 py-1.5 text-xs text-red-400 hover:bg-red-900/20 transition-colors flex items-center gap-2"
         >
           <span className="material-symbols-outlined text-xs">delete</span>
-          Delete
+          {deleteLabel}
         </button>
       </div>
     </>

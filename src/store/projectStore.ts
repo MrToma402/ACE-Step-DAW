@@ -12,7 +12,7 @@ import {
 } from '../constants/defaults';
 import { saveProject as saveProjectToIDB } from '../services/projectStorage';
 import { deleteAudioBlob, saveAudioBlob } from '../services/audioFileManager';
-import { reorderTracksByTarget } from './trackOrder';
+import { reorderTrackBlockByTarget, reorderTracksByTarget } from './trackOrder';
 import { resolveClipMusicalOverrides } from './clipMusicalDefaults';
 import { buildClipMergePlan } from '../features/timeline/clipMergePlan';
 import { buildMergedClipAudio } from '../features/timeline/clipMergeAudio';
@@ -35,7 +35,9 @@ interface ProjectState {
 
   addTrack: (trackName: TrackName) => Track;
   removeTrack: (trackId: string) => void;
+  removeTracks: (trackIds: string[]) => void;
   reorderTrack: (draggedTrackId: string, targetTrackId: string) => void;
+  reorderTrackBlock: (draggedTrackIds: string[], targetTrackId: string) => void;
   updateTrack: (trackId: string, updates: Partial<Pick<Track, 'displayName' | 'volume' | 'muted' | 'soloed' | 'hidden'>>) => void;
 
   addClip: (trackId: string, clip: Omit<Clip, 'id' | 'trackId' | 'generationStatus' | 'generationJobId' | 'cumulativeMixKey' | 'isolatedAudioKey' | 'waveformPeaks'>) => Clip;
@@ -173,10 +175,17 @@ export const useProjectStore = create<ProjectState>()(
       },
 
       removeTrack: (trackId) => {
+        get().removeTracks([trackId]);
+      },
+
+      removeTracks: (trackIds) => {
         const state = get();
         if (!state.project) return;
-        const removedTrack = state.project.tracks.find((t) => t.id === trackId) ?? null;
-        if (removedTrack) {
+        const trackIdSet = new Set(trackIds);
+        if (trackIdSet.size === 0) return;
+        const removedTracks = state.project.tracks.filter((track) => trackIdSet.has(track.id));
+
+        for (const removedTrack of removedTracks) {
           for (const clip of removedTrack.clips) {
             void cancelClipGeneration(clip.id);
             useGenerationStore.getState().removeJobsForClip(clip.id);
@@ -184,7 +193,8 @@ export const useProjectStore = create<ProjectState>()(
             void deleteAudioBlob(state.project.id, clip.id, 'isolated');
           }
         }
-        const newTracks = state.project.tracks.filter((t) => t.id !== trackId);
+
+        const newTracks = state.project.tracks.filter((track) => !trackIdSet.has(track.id));
         set({
           project: {
             ...state.project,
@@ -202,6 +212,26 @@ export const useProjectStore = create<ProjectState>()(
         const reorderedTracks = reorderTracksByTarget(
           state.project.tracks,
           draggedTrackId,
+          targetTrackId,
+        );
+        if (reorderedTracks === state.project.tracks) return;
+
+        set({
+          project: {
+            ...state.project,
+            updatedAt: Date.now(),
+            tracks: reorderedTracks,
+          },
+        });
+      },
+
+      reorderTrackBlock: (draggedTrackIds, targetTrackId) => {
+        const state = get();
+        if (!state.project) return;
+
+        const reorderedTracks = reorderTrackBlockByTarget(
+          state.project.tracks,
+          draggedTrackIds,
           targetTrackId,
         );
         if (reorderedTracks === state.project.tracks) return;
