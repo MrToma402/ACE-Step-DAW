@@ -34,3 +34,12 @@ export function buildVariantClipDraft(sourceClip: Clip): NewClipDraft {
     lockedSeed: null,
   };
 }
+
+/**
+ * Returns how many additional variant clips should be created on new tracks.
+ * The source clip itself is always treated as the first variant in a batch.
+ */
+export function resolveAdditionalVariantClipCount(requestedVariantCount: number): number {
+  if (!Number.isFinite(requestedVariantCount)) return 0;
+  return Math.max(0, Math.floor(requestedVariantCount) - 1);
+}

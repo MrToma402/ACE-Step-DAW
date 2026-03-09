@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import type { Clip } from '../../types/project.ts';
 import {
   buildVariantClipDraft,
+  resolveAdditionalVariantClipCount,
   resolveSingleSelectedClipId,
 } from './variantClipFactory.ts';
 
@@ -75,4 +76,17 @@ test('buildVariantClipDraft applies default sample/expand settings when unset', 
   assert.equal(draft.autoExpandPrompt, true);
   assert.equal(draft.generationTaskType, undefined);
   assert.equal(draft.ditModel, null);
+});
+
+test('resolveAdditionalVariantClipCount includes source clip in requested total', () => {
+  assert.equal(resolveAdditionalVariantClipCount(2), 1);
+  assert.equal(resolveAdditionalVariantClipCount(4), 3);
+  assert.equal(resolveAdditionalVariantClipCount(8), 7);
+});
+
+test('resolveAdditionalVariantClipCount clamps invalid counts to zero', () => {
+  assert.equal(resolveAdditionalVariantClipCount(1), 0);
+  assert.equal(resolveAdditionalVariantClipCount(0), 0);
+  assert.equal(resolveAdditionalVariantClipCount(-3), 0);
+  assert.equal(resolveAdditionalVariantClipCount(Number.NaN), 0);
 });

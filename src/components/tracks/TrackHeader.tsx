@@ -243,7 +243,7 @@ export function TrackHeader({
         onPointerCancel={clearDragSuppression}
         onDragEnd={onDragEndTrack}
         onContextMenu={handleContextMenu}
-        className={`flex flex-col justify-between h-24 border-b border-daw-border group transition-colors cursor-grab active:cursor-grabbing ${
+        className={`flex flex-col justify-between h-[88px] border-b border-daw-border group transition-colors cursor-grab active:cursor-grabbing ${
           isDragging
             ? 'bg-daw-panel-light opacity-70'
             : isDropTarget
@@ -261,8 +261,8 @@ export function TrackHeader({
           onChange={handleFileChange}
         />
         {/* Top: Name + Track number */}
-        <div className="px-2.5 pt-2">
-          <div className="flex items-center justify-between mb-1.5">
+        <div className="px-2.5 pt-1.5">
+          <div className="flex items-center justify-between mb-1">
             <span
               className="text-[10px] font-bold tracking-[0.15em] uppercase truncate"
               style={{ color: track.color }}
@@ -276,20 +276,20 @@ export function TrackHeader({
           <div className="flex gap-1" data-no-track-drag="true">
             <button
               onClick={() => updateTrack(track.id, { hidden: !track.hidden })}
-              className={`w-5 h-4 text-[8px] font-bold flex items-center justify-center rounded transition-colors ${
+              className={`w-[22px] h-[18px] text-[9px] font-bold flex items-center justify-center rounded transition-colors ${
                 track.hidden
                   ? 'bg-violet-600/80 text-violet-100 ring-1 ring-violet-300/60'
                   : 'bg-violet-950/35 text-violet-300 border border-violet-700/40 hover:text-violet-100 hover:bg-violet-900/45'
               }`}
               title={track.hidden ? 'Show track' : 'Hide track'}
             >
-              <span className="material-symbols-outlined" style={{ fontSize: '10px' }}>
+              <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>
                 {track.hidden ? 'visibility_off' : 'visibility'}
               </span>
             </button>
             <button
               onClick={() => updateTrack(track.id, { muted: !track.muted })}
-              className={`w-5 h-4 text-[8px] font-bold flex items-center justify-center rounded transition-colors ${track.muted
+              className={`w-[22px] h-[18px] text-[9px] font-bold flex items-center justify-center rounded transition-colors ${track.muted
                 ? 'bg-amber-600/85 text-amber-50 ring-1 ring-amber-300/60'
                 : 'bg-amber-950/35 text-amber-300 border border-amber-700/40 hover:text-amber-100 hover:bg-amber-900/45'
                 }`}
@@ -299,7 +299,7 @@ export function TrackHeader({
             </button>
             <button
               onClick={() => updateTrack(track.id, { soloed: !track.soloed })}
-              className={`w-5 h-4 text-[8px] font-bold flex items-center justify-center rounded transition-colors ${track.soloed
+              className={`w-[22px] h-[18px] text-[9px] font-bold flex items-center justify-center rounded transition-colors ${track.soloed
                 ? 'bg-emerald-600/85 text-emerald-50 ring-1 ring-emerald-300/60'
                 : 'bg-emerald-950/35 text-emerald-300 border border-emerald-700/40 hover:text-emerald-100 hover:bg-emerald-900/45'
                 }`}
@@ -309,24 +309,24 @@ export function TrackHeader({
             </button>
             <button
               onClick={handleImportClick}
-              className="w-5 h-4 text-[8px] font-bold flex items-center justify-center rounded bg-sky-950/35 text-sky-300 border border-sky-700/40 hover:text-sky-100 hover:bg-sky-900/45 transition-all"
+              className="w-[22px] h-[18px] text-[9px] font-bold flex items-center justify-center rounded bg-sky-950/35 text-sky-300 border border-sky-700/40 hover:text-sky-100 hover:bg-sky-900/45 transition-all"
               title="Import audio to this track"
             >
-              <span className="material-symbols-outlined" style={{ fontSize: '10px' }}>upload</span>
+              <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>upload</span>
             </button>
             <button
               onClick={handleDownloadTrack}
               disabled={isDownloading}
-              className="w-5 h-4 text-[8px] font-bold flex items-center justify-center rounded bg-cyan-950/35 text-cyan-300 border border-cyan-700/40 hover:text-cyan-100 hover:bg-cyan-900/45 transition-all disabled:cursor-not-allowed disabled:opacity-50"
+              className="w-[22px] h-[18px] text-[9px] font-bold flex items-center justify-center rounded bg-cyan-950/35 text-cyan-300 border border-cyan-700/40 hover:text-cyan-100 hover:bg-cyan-900/45 transition-all disabled:cursor-not-allowed disabled:opacity-50"
               title="Download this track as WAV"
             >
-              <svg viewBox="0 0 16 16" width="10" height="10" fill="none" aria-hidden="true">
+              <svg viewBox="0 0 16 16" width="12" height="12" fill="none" aria-hidden="true">
                 <path d="M8 2v7m0 0l-3-3m3 3l3-3M3 12h10" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
             </button>
             <button
               onClick={() => removeTrack(track.id)}
-              className="w-5 h-4 text-[8px] font-bold flex items-center justify-center rounded bg-rose-950/35 text-rose-300 border border-rose-700/40 hover:text-rose-100 hover:bg-rose-900/45 transition-all ml-auto"
+              className="w-[22px] h-[18px] text-[9px] font-bold flex items-center justify-center rounded bg-rose-950/35 text-rose-300 border border-rose-700/40 hover:text-rose-100 hover:bg-rose-900/45 transition-all ml-auto"
               title="Remove track"
             >
               ×
@@ -335,7 +335,7 @@ export function TrackHeader({
         </div>
 
         {/* Bottom: Volume meter */}
-        <div className="px-2.5 pb-2" data-no-track-drag="true">
+        <div className="px-2.5 pb-1.5" data-no-track-drag="true">
           <input
             type="range"
             min="0"

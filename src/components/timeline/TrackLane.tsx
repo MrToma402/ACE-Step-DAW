@@ -7,6 +7,7 @@ import { useTimelineInteraction } from '../../hooks/useTimelineInteraction';
 import { ClipBlock } from './ClipBlock';
 import { isArrangementClipSelected } from '../../features/arrangement/selection';
 import { resolveLaneEmptyDragAction } from '../../features/timeline/laneEmptyDragAction';
+import { resolveHorizontalEdgeAutoScrollDelta, resolveVerticalEdgeAutoScrollDelta } from '../../features/timeline/dragEdgeAutoScroll';
 
 interface TrackLaneProps {
   track: Track;
@@ -44,35 +45,87 @@ export function TrackLane({
   const dragMovedRef = useRef(false);
   const totalWidth = project ? project.totalDuration * pixelsPerSecond : 0;
   const isDropTarget = clipDragPreview?.hoverTrackId === track.id;
-
   const onMouseDown = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     if (e.button !== 0) return;
     e.preventDefault();
-    const rect = e.currentTarget.getBoundingClientRect();
-    const startX = Math.max(0, Math.min(e.clientX - rect.left, totalWidth));
+    const laneNode = e.currentTarget;
+    const scrollContainer = laneNode.closest<HTMLElement>('[data-timeline-scroll-container="true"]');
+    const getLaneX = (clientX: number): number => {
+      const rect = laneNode.getBoundingClientRect();
+      return Math.max(0, Math.min(clientX - rect.left, totalWidth));
+    };
+    const startX = getLaneX(e.clientX);
     const startClientX = e.clientX;
     const startY = e.clientY;
+    const startContentY = startY + (scrollContainer?.scrollTop ?? 0);
     const additive = e.ctrlKey || e.metaKey;
     const baseSelectedClipIds = new Set(useUIStore.getState().selectedClipIds);
+    let latestClientX = e.clientX;
+    let latestClientY = e.clientY;
+    let autoScrollFrameId: number | null = null;
+    let pointerActive = true;
     dragMovedRef.current = false;
-
-    const onMouseMove = (ev: MouseEvent) => {
-      const moved = Math.abs(ev.clientX - startClientX) >= 3 || Math.abs(ev.clientY - startY) >= 3;
-      const nextX = Math.max(0, Math.min(ev.clientX - rect.left, totalWidth));
+    const updateDragSelection = (clientX: number, clientY: number) => {
+      const moved = Math.abs(clientX - startClientX) >= 3 || Math.abs(clientY - startY) >= 3;
+      const nextX = getLaneX(clientX);
+      const anchoredStartY = scrollContainer ? startContentY - scrollContainer.scrollTop : startY;
       if (moved) {
         dragMovedRef.current = true;
-        onMarqueeVisualChange?.(startY, ev.clientY, startX, nextX);
-        onSelectClipsInRect?.(startY, ev.clientY, startX, nextX, 0, additive, baseSelectedClipIds);
+        onMarqueeVisualChange?.(anchoredStartY, clientY, startX, nextX);
+        onSelectClipsInRect?.(anchoredStartY, clientY, startX, nextX, 0, additive, baseSelectedClipIds);
       }
     };
-
+    const stopAutoScroll = () => {
+      pointerActive = false;
+      if (autoScrollFrameId === null) return;
+      window.cancelAnimationFrame(autoScrollFrameId);
+      autoScrollFrameId = null;
+    };
+    const runAutoScroll = () => {
+      if (!pointerActive) return;
+      if (dragMovedRef.current && scrollContainer) {
+        const scrollRect = scrollContainer.getBoundingClientRect();
+        const maxScrollLeft = Math.max(0, scrollContainer.scrollWidth - scrollContainer.clientWidth);
+        const maxScrollTop = Math.max(0, scrollContainer.scrollHeight - scrollContainer.clientHeight);
+        const scrollDelta = resolveHorizontalEdgeAutoScrollDelta({
+          pointerClientX: latestClientX,
+          viewportLeft: scrollRect.left,
+          viewportRight: scrollRect.right,
+          scrollLeft: scrollContainer.scrollLeft,
+          maxScrollLeft,
+        });
+        const verticalScrollDelta = resolveVerticalEdgeAutoScrollDelta({
+          pointerClientY: latestClientY,
+          viewportTop: scrollRect.top,
+          viewportBottom: scrollRect.bottom,
+          scrollTop: scrollContainer.scrollTop,
+          maxScrollTop,
+        });
+        if (scrollDelta !== 0 || verticalScrollDelta !== 0) {
+          scrollContainer.scrollLeft += scrollDelta;
+          scrollContainer.scrollTop += verticalScrollDelta;
+          updateDragSelection(latestClientX, latestClientY);
+        }
+      }
+      if (pointerActive) {
+        autoScrollFrameId = window.requestAnimationFrame(runAutoScroll);
+      }
+    };
+    autoScrollFrameId = window.requestAnimationFrame(runAutoScroll);
+    const onMouseMove = (ev: MouseEvent) => {
+      latestClientX = ev.clientX;
+      latestClientY = ev.clientY;
+      updateDragSelection(ev.clientX, ev.clientY);
+    };
     const onMouseUp = (ev: MouseEvent) => {
+      stopAutoScroll();
       window.removeEventListener('mousemove', onMouseMove);
       window.removeEventListener('mouseup', onMouseUp);
       window.removeEventListener('blur', onWindowBlur);
-      const endX = Math.max(0, Math.min(ev.clientX - rect.left, totalWidth));
+      const endX = getLaneX(ev.clientX);
+      const anchoredStartY = scrollContainer ? startContentY - scrollContainer.scrollTop : startY;
       if (resolveLaneEmptyDragAction(dragMovedRef.current) === 'selectClips') {
-        const result = onSelectClipsInRect?.(startY, ev.clientY, startX, endX, 0, additive, baseSelectedClipIds);
+        const result = onSelectClipsInRect?.(anchoredStartY, ev.clientY, startX, endX, 0, additive, baseSelectedClipIds);
         if (!additive && result && result.selectedClipCount === 0 && result.selectedTrackCount === 1) {
           handleLaneDragSelection(track.id, startX, endX, 0);
         }
@@ -83,18 +136,17 @@ export function TrackLane({
       dragMovedRef.current = false;
     };
     const onWindowBlur = () => {
+      stopAutoScroll();
       onMarqueeVisualEnd?.();
       dragMovedRef.current = false;
       window.removeEventListener('mousemove', onMouseMove);
       window.removeEventListener('mouseup', onMouseUp);
       window.removeEventListener('blur', onWindowBlur);
     };
-
     window.addEventListener('mousemove', onMouseMove);
     window.addEventListener('mouseup', onMouseUp);
     window.addEventListener('blur', onWindowBlur);
   }, [handleLaneClick, handleLaneDragSelection, onMarqueeVisualChange, onMarqueeVisualEnd, onSelectClipsInRect, totalWidth, track.id]);
-
   const visibleClips =
     workspace?.settings.hideInactiveTakes
       ? track.clips.filter((clip) => isArrangementClipSelected(clip, workspace))
@@ -104,7 +156,7 @@ export function TrackLane({
   if (track.hidden) {
     return (
       <div
-        className="relative h-24 border-b border-daw-border bg-daw-surface/20"
+        className="relative h-[88px] border-b border-daw-border bg-daw-surface/20"
         data-track-id={track.id}
         data-track-lane-id={track.id}
         style={{ width: totalWidth }}
@@ -118,7 +170,7 @@ export function TrackLane({
 
   return (
     <div
-      className={`relative h-24 border-b border-daw-border transition-colors ${
+      className={`relative h-[88px] border-b border-daw-border transition-colors ${
         isDropTarget
           ? 'bg-daw-accent/15'
           : 'bg-daw-surface/40 hover:bg-daw-surface/60'

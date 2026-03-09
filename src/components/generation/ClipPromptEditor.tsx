@@ -6,7 +6,11 @@ import { KEY_SCALES, TIME_SIGNATURES } from '../../constants/tracks';
 import { normalizeSeconds } from '../../utils/time';
 import { isDisposableDraftClip } from '../../features/generation/draftClipCleanup';
 import type { ClipGenerationTaskType } from '../../types/project';
-import { VARIANT_BATCH_OPTIONS, buildVariantClipDraft } from '../../features/generation/variantClipFactory';
+import {
+  VARIANT_BATCH_OPTIONS,
+  buildVariantClipDraft,
+  resolveAdditionalVariantClipCount,
+} from '../../features/generation/variantClipFactory';
 
 function isVocalTrackName(trackName: string): boolean {
   return trackName === 'vocals' || trackName === 'backing_vocals';
@@ -159,8 +163,9 @@ export function ClipPromptEditor() {
     }
     updateClip(editingClipId, baseUpdates);
     const sourceClip = { ...clip, ...baseUpdates };
-    const generatedClipIds: string[] = [];
-    for (let index = 0; index < count; index++) {
+    const generatedClipIds: string[] = [editingClipId];
+    const additionalVariantCount = resolveAdditionalVariantClipCount(count);
+    for (let index = 0; index < additionalVariantCount; index++) {
       const variantTrack = addTrack(sourceTrack.trackName);
       const variantDraft = buildVariantClipDraft(sourceClip);
       const variantClip = addClip(variantTrack.id, variantDraft);
