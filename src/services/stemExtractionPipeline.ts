@@ -1,7 +1,8 @@
 import type { ExtractTaskParams } from '../types/api';
 import type { Project, Track, TrackName } from '../types/project';
-import { TRACK_CATALOG, TRACK_NAMES } from '../constants/tracks';
+import { TRACK_CATALOG } from '../constants/tracks';
 import { isArrangementClipSelected } from '../features/arrangement/selection';
+import { resolveExtractTrackNames } from '../features/extraction/extractTrackFilter';
 import { getAudioEngine } from '../hooks/useAudioEngine';
 import { useArrangementStore } from '../store/arrangementStore';
 import { useGenerationStore } from '../store/generationStore';
@@ -12,9 +13,6 @@ import { generateTask } from './aceStepApi';
 import { loadAudioBlobByKey, saveAudioBlob } from './audioFileManager';
 import { hasAudibleContent, limitBufferPeak } from './extractAudioAnalysis';
 
-const EXTRACT_TRACK_NAMES: TrackName[] = TRACK_NAMES.filter(
-  (name): name is TrackName => name !== 'complete',
-);
 const TARGET_PEAK = 0.98;
 const SILENCE_RMS_THRESHOLD = 0.002;
 const SILENCE_PEAK_THRESHOLD = 0.02;
@@ -215,6 +213,7 @@ export async function extractTrackToNewTracks(
   if (!sourceTrack) {
     throw new Error('Source track not found.');
   }
+  const extractTrackNames = resolveExtractTrackNames(sourceTrack.trackName);
 
   useGenerationStore.getState().setIsGenerating(true);
   try {
@@ -238,15 +237,15 @@ export async function extractTrackToNewTracks(
     options.onProgress?.({
       phase: 'extracting',
       completed: processedCount,
-      total: EXTRACT_TRACK_NAMES.length,
+      total: extractTrackNames.length,
       currentTrackName: null,
     });
 
-    for (const trackName of EXTRACT_TRACK_NAMES) {
+    for (const trackName of extractTrackNames) {
       options.onProgress?.({
         phase: 'extracting',
         completed: processedCount,
-        total: EXTRACT_TRACK_NAMES.length,
+        total: extractTrackNames.length,
         currentTrackName: trackName,
         detail: `Extracting ${TRACK_CATALOG[trackName].displayName}...`,
       });
@@ -297,7 +296,7 @@ export async function extractTrackToNewTracks(
         options.onProgress?.({
           phase: 'extracting',
           completed: processedCount,
-          total: EXTRACT_TRACK_NAMES.length,
+          total: extractTrackNames.length,
           currentTrackName: trackName,
         });
       }
@@ -305,8 +304,8 @@ export async function extractTrackToNewTracks(
 
     options.onProgress?.({
       phase: 'done',
-      completed: EXTRACT_TRACK_NAMES.length,
-      total: EXTRACT_TRACK_NAMES.length,
+      completed: extractTrackNames.length,
+      total: extractTrackNames.length,
       currentTrackName: null,
       detail: 'Extraction complete',
     });
